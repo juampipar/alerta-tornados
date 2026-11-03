@@ -1,4 +1,4 @@
-import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, nearestStop, plainKey } from './lib/risk.mjs';
+import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, nearestStop, plainKey, bearingTo } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 
 const $ = (s) => document.querySelector(s);
@@ -287,6 +287,70 @@ function metricsHtml(r) {
 const dirLink = (lat, lon) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
 
 
+
+/* ---------------- Plan fijado ---------------- */
+// Guarda la opción elegida para que no cambie con cada actualización del pronóstico.
+// Solo avisa si pasa algo que de verdad justifica cambiar.
+const PIN_KEY = 'planFijado';
+const loadPin = () => { try { return JSON.parse(localStorage.getItem(PIN_KEY) || 'null'); } catch { return null; } };
+const savePin = (p) => { try { p ? localStorage.setItem(PIN_KEY, JSON.stringify(p)) : localStorage.removeItem(PIN_KEY); } catch { /* sin almacenamiento */ } };
+function pinOption(o) {
+  savePin({ date: curDate(), ctr: o.z.ctr, name: o.z.name, v: o.z.v, peakH: o.peakH, vp: o.vp, stop: o.stop, at: nowDec().h });
+  render();
+}
+// Recalcula distancia y horarios hacia la parada fijada.
+function retarget(o, pin) {
+  const vp = pin.vp, dist = Math.round(km(S.origin, vp)), drive = driveHours(dist);
+  const nd = nowDec(), nowH = nd.date === curDate() ? nd.h : null;
+  let leave = Math.max(11, o.peakH - 2) - 1 - drive, late = false;
+  if (nowH != null && leave < nowH) { leave = nowH; late = true; }
+  const hit = o.mspd != null ? routeCheck(S.origin, vp, o.z, o.mdir, o.mspd, leave, o.peakH) : null;
+  return { ...o, vp, stop: pin.stop, dist, drive, leave, late, arriveAt: leave + drive, reachable: leave + drive <= o.peakH + 0.5, hit, safe: null };
+}
+// Aplica el plan fijado: lo pone primero y arma los avisos de "vale cambiar".
+function applyPin(opts) {
+  const pin = loadPin();
+  S.pin = null;
+  if (!pin) return opts;
+  if (pin.date < nowDec().date) { savePin(null); return opts; } // plan de un día que ya pasó
+  if (pin.date !== curDate()) return opts;
+  const k = opts.findIndex((o) => km(o.z.ctr, pin.ctr) <= 90);
+  const alerts = [];
+  let mine = null;
+  if (k >= 0) {
+    mine = retarget(opts[k], pin);
+    opts = [mine, ...opts.filter((_, j) => j !== k)];
+    const moved = Math.round(km(pin.ctr, mine.z.ctr));
+    if (mine.z.v < 45) alerts.push(['bad', `Tu zona bajó a <b>${mine.z.v}</b>: ya no da. Mirá las otras opciones.`]);
+    const better = opts.slice(1).find((o) => o.reachable && o.z.v >= mine.z.v + 10);
+    if (better) alerts.push(['bad', `Hay otra zona <b>10+ puntos mejor</b> a la que llegás: Zona ${esc(better.z.name)} (${better.z.v}). Vale pensar en cambiar.`]);
+    if (moved >= 25 && mine.z.v >= 45) alerts.push(['info', `La zona se corrió ~${moved} km al ${rumbo(bearingTo(pin.ctr, mine.z.ctr))}. Es normal: no hace falta cambiar de parada.`]);
+  } else {
+    alerts.push(['bad', `Tu zona (${esc(pin.name)}) <b>ya no aparece</b> en el pronóstico: bajó de 45. Mirá las otras opciones o seguí el radar.`]);
+  }
+  // Avisos a corto plazo del SMN: ¿en tu zona o en otro lado?
+  const acp = (S.smn?.alerts ?? []).filter((a) => a.shortTerm);
+  const nearZone = (a, c, r) => a.areas.some((ar) => ar.polygons.some((p) => distToPoly(c, p) <= r));
+  if (acp.length) {
+    if (acp.some((a) => nearZone(a, pin.ctr, 80))) alerts.unshift(['go', '🚨 <b>Se están formando en tu zona</b> (aviso a corto plazo del SMN). Mirá el radar y acercate con cuidado.']);
+    else {
+      const other = opts.find((o) => o !== mine && acp.some((a) => nearZone(a, o.z.ctr, 60)));
+      if (other) alerts.unshift(['bad', `🚨 <b>Se están formando en otra zona</b>: Zona ${esc(other.z.name)}. Si te queda a mano, vale cambiar.`]);
+    }
+  }
+  S.pin = { ...pin, found: k >= 0, alerts };
+  return opts;
+}
+function pinBanner() {
+  if (!S.pin) return '';
+  const p = S.pin, ok = !p.alerts.some(([c]) => c === 'bad' || c === 'go');
+  return `<div class="pinbox ${ok ? 'ok' : 'warn'}">
+    <p>📌 <b>Plan fijado</b> a las ${hm(p.at)}: Zona ${esc(p.name)} · parada ${p.stop ? esc(p.stop.label) : 'punto aproximado'}.${ok ? ' <b>Sin cambios importantes: seguí con tu plan.</b>' : ''}</p>
+    ${p.alerts.map(([c, t]) => `<p class="pin-${c}">${t}</p>`).join('')}
+    <button class="chip" id="unpin">Soltar plan</button>
+  </div>`;
+}
+
 /* ---------------- Opciones: dónde parar ---------------- */
 // Hora actual (Argentina) con minutos.
 const nowDec = () => { const d = new Date(Date.now() - 3 * 3600e3); return { date: d.toISOString().slice(0, 10), h: d.getUTCHours() + d.getUTCMinutes() / 60 }; };
@@ -347,14 +411,15 @@ function renderHero(rank) {
   $('#hero').innerHTML = `
     <div class="gauge" style="--v:${o.z.v};--c:${lv.color}"><span>${o.z.v}<small>${lv.label}</small></span></div>
     <div>
-      <div class="kicker">Mejor opción · ${day} ${confHtml}</div>
+      ${pinBanner()}
+      <div class="kicker">${S.pin?.found ? 'Tu plan' : 'Mejor opción'} · ${day} ${confHtml}</div>
       <h2>Zona ${esc(o.z.name)}</h2>
       <p class="verdict">${verdict(o.z.v)}</p>
       <p class="sub">👁 Parar en ${stopTxt(o)} (${vpSpan(o.vp)})</p>
       <p class="sub">Pico <b>${hm(o.peakH)}</b> · ${o.dist} km desde ${esc(S.origin.label)} (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
       ${routeTxt(o) ? `<p class="sub">${routeTxt(o)}</p>` : ''}
       <p class="sub conftxt">${conf(S.day).txt}</p>
-      <div class="pbtns"><a class="go" href="${dirLink(o.vp.lat, o.vp.lon)}" target="_blank" rel="noopener">Ruta a la parada →</a> <a class="chip" href="#plan">Plan hora por hora ↓</a></div>
+      <div class="pbtns"><a class="go" href="${dirLink(o.vp.lat, o.vp.lon)}" target="_blank" rel="noopener">Ruta a la parada →</a> ${S.pin?.found ? '' : '<button class="chip pinbtn" data-k="0">📌 Fijar este plan</button>'} <a class="chip" href="#plan">Plan hora por hora ↓</a></div>
     </div>
     <p class="mlegend">Ingredientes de la zona (en ${esc(o.town.name)} a las ${hm(o.peakH)}):</p>
     <div class="metrics">${metricsHtml(ingAt(o.town, o.i))}</div>
@@ -393,7 +458,7 @@ function renderList(rank) {
       <p>👁 ${stopTxt(o)} · ${vpSpan(o.vp)}</p>
       <p>Pico <b>${hm(o.peakH)}</b> · ${o.dist} km (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
       ${routeTxt(o) ? `<p>${routeTxt(o)}</p>` : ''}
-      <div class="pbtns"><a class="go" href="${dirLink(o.vp.lat, o.vp.lon)}" target="_blank" rel="noopener">Ruta →</a> <button class="chip optshow" data-k="${k}">Ver en el mapa</button></div>
+      <div class="pbtns"><a class="go" href="${dirLink(o.vp.lat, o.vp.lon)}" target="_blank" rel="noopener">Ruta →</a> <button class="chip optshow" data-k="${k}">Ver en el mapa</button> ${S.pin?.found && k === 0 ? '<span class="pintag">📌 fijado</span>' : `<button class="chip pinbtn" data-k="${k}">📌 Fijar</button>`}</div>
     </li>`;
   }).join('');
   const shown = S.all ? rank : rank.slice(0, 10);
@@ -431,13 +496,15 @@ function renderTimebar() {
 function render() {
   if (!S.data) return;
   const rank = townsRanked();
-  S.opts = buildOptions(curDate());
+  S.opts = applyPin(buildOptions(curDate()));
   S.zones = S.opts.map((o) => o.z); // los círculos del mapa siguen el plan del día (no rotan con la hora)
   S.vp = S.opts[0]?.vp ?? null;
   renderGrid(); renderTowns(rank); renderHero(rank); renderPlan(); renderList(rank);
   renderTimebar(); renderSafety(); renderZones(); renderWrf(); fillPlace();
   const fly = (p) => { showTab('map'); map.flyTo([p.lat, p.lon], 10); $('.mapcard').scrollIntoView({ behavior: 'smooth' }); };
   $$('.optshow').forEach((x) => (x.onclick = (e) => { e.stopPropagation(); fly(S.opts[+x.dataset.k].vp); }));
+  $$('.pinbtn').forEach((x) => (x.onclick = (e) => { e.stopPropagation(); pinOption(S.opts[+x.dataset.k]); }));
+  if ($('#unpin')) $('#unpin').onclick = () => { savePin(null); render(); };
   fetchStops();
 }
 
