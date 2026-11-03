@@ -20,7 +20,7 @@
     <img src="icon.svg" alt="" width="36" height="36">
     <div>
       <h1>Pasillo de Tornados</h1>
-      <p>Córdoba · Santa Fe · Buenos Aires · Entre Ríos · La Pampa</p>
+      <p>Córdoba · Santa Fe · Buenos Aires · Entre Ríos · La Pampa · San Luis</p>
     </div>
   </div>
   <div class="status" id="status"></div>
@@ -110,13 +110,14 @@
       <h3>Qué es cada número</h3>
       <ul>
         <li><b>Potencial 0–100:</b> qué tan buenos son los ingredientes para tornado. <b>65+</b> alto, <b>45–64</b> moderado, menos de 45 no da.</li>
-        <li><b>Zona de caza (círculo):</b> el área con más potencial. El <b>“máx 75”</b> es el punto más fuerte adentro del círculo, que puede caer en el campo, entre pueblos.</li>
-        <li><b>Lista “Dónde ir”:</b> el puntaje <b>en cada pueblo</b>. Por eso un pueblo puede tener 69 y su zona “máx 75”: el pueblo no está justo en el punto más fuerte.</li>
+        <li><b>Zona de caza (círculo):</b> lo único que importa. Es el área con más potencial y su número es el del punto más fuerte adentro del círculo.</li>
+        <li><b>“Ir hacia”:</b> el pueblo dentro de la zona para poner en el GPS. Es solo un destino, no otro puntaje.</li>
         <li><b>Otra zona:</b> un segundo lugar con buen potencial, lejos del primero. Elegí el que te quede mejor.</li>
+        <li><b>Lista “Dónde ir”:</b> todos los pueblos con su propio puntaje (🎯 = dentro de la zona). Sirve para comparar, pero manda el círculo.</li>
       </ul>
 
       <h3>Por qué cambia todo el tiempo</h3>
-      <p class="muted">El pronóstico se recalcula <b>cada hora</b>, la lluvia del modelo del SMN <b>4 veces por día</b> y los avisos del SMN <b>cada 10 minutos</b>. Que la zona se corra 30–50 km es normal: mirá siempre lo último. Si se va a otra provincia, replanteá.</p>
+      <p class="muted">El pronóstico se recalcula <b>cada 2 horas</b>, la lluvia del modelo del SMN <b>4 veces por día</b> y los avisos del SMN <b>cada 10 minutos</b>. Que la zona se corra 30–50 km es normal: mirá siempre lo último. Si se va a otra provincia, replanteá.</p>
 
       <h3>El día de caza, paso a paso</h3>
       <ol class="steps">
@@ -178,7 +179,7 @@
       <ul>
         <li><b>Puntaje 0–100:</b> cuánto potencial hay de supercélulas, las tormentas que giran y pueden dar tornados. <b>65 o más</b> = día para salir; <b>45–64</b> = vale si estás cerca; <b>menos de 45</b> = casi seguro que no.</li>
         <li><b>Confianza:</b> hoy alta, mañana media, pasado baja. Pasado mañana es solo una tendencia.</li>
-        <li><b>Mejor localidad:</b> el pueblo con más puntaje. Es una referencia dentro de una región de unos 100 km, no el lugar exacto. El círculo de <b>zona de caza</b> muestra esa región.</li>
+        <li><b>Zona de caza:</b> la región (35–100 km) con más potencial. “Ir hacia” es un pueblo de esa zona para el GPS, no el lugar exacto de la tormenta.</li>
         <li><b>Pico a las X h:</b> la hora con mejores condiciones. Las tormentas suelen arrancar 1–2 h antes.</li>
         <li><b>Colores de los recuadros:</b> <span class="sw sw-good">rojo</span> favorece tornados, <span class="sw sw-mid">naranja</span> a medias, <span class="sw sw-low">gris</span> no ayuda.</li>
       </ul>

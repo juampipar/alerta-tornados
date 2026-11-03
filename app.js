@@ -1,4 +1,4 @@
-import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones } from './lib/risk.mjs';
+import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 
 const $ = (s) => document.querySelector(s);
@@ -284,29 +284,26 @@ function metricsHtml(r) {
 }
 const dirLink = (lat, lon) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
 
+// Pueblo al que ir: el de la zona de caza principal (o el de más puntaje si no hay zona).
+const target = (rank) => (S.zones?.[0] ? goTo(S.zones[0], rank) : rank[0]);
 function renderHero(rank) {
-  const b = rank[0];
-  if (!b) { $('#hero').textContent = 'Sin datos para este día.'; return; }
-  const lv = level(b.score);
-  // Núcleo de la grilla (puede caer entre localidades).
-  const date = curDate();
-  let core = null;
-  S.data.grid.pts.forEach(([lat, lon], k) => { const v = pick(S.data.grid.score[k], date).v; if (!core || v > core.v) core = { v, lat, lon }; });
-  const near = core && S.data.towns.reduce((a, t) => (km(core, t) < km(core, a) ? t : a));
-  const coreTxt = core && core.v >= b.score + 8 && core.v >= 30
-    ? `<p class="sub">Máximo de la grilla: <b>${core.v}</b> cerca de ${esc(near.name)} (${Math.round(km(near, core))} km). <a href="${dirLink(core.lat, core.lon)}" target="_blank" rel="noopener">Ruta</a></p>` : '';
+  if (!rank[0]) { $('#hero').textContent = 'Sin datos para este día.'; return; }
+  const z = S.zones?.[0], z2 = S.zones?.[1], b = target(rank);
+  const score = z ? z.v : b.score, lv = level(score);
   const when = S.max ? `pico a las ${b.hour}` : `a las ${S.hour} h`;
+  const day = ['hoy', 'mañana', 'pasado mañana'][S.day];
   $('#hero').innerHTML = `
-    <div class="gauge" style="--v:${b.score};--c:${lv.color}"><span>${b.score}<small>${lv.label}</small></span></div>
+    <div class="gauge" style="--v:${score};--c:${lv.color}"><span>${score}<small>${lv.label}</small></span></div>
     <div>
-      <div class="kicker">Mejor localidad · ${['hoy', 'mañana', 'pasado mañana'][S.day]} <span class="conf conf-${conf(S.day).k}">Confianza ${conf(S.day).k}</span></div>
-      <h2>${esc(b.t.name)}</h2>
-      <p class="verdict">${verdict(b.score)}</p>
-      <p class="sub">${b.dist} km desde ${esc(S.origin.label)} (~${driveHours(b.dist).toFixed(1)} h) · ${when}</p>
-      ${coreTxt}
+      <div class="kicker">${z ? 'Zona de caza' : 'Sin zona de caza'} · ${day} <span class="conf conf-${conf(S.day).k}">Confianza ${conf(S.day).k}</span></div>
+      <h2>${z ? `Zona ${esc(z.name)}` : esc(b.t.name)}</h2>
+      <p class="verdict">${verdict(score)}</p>
+      <p class="sub">Ir hacia <b>${esc(b.t.name)}</b>${z && km(b.t, z.ctr) > z.r ? ` (pueblo más cercano: la zona empieza ${Math.round(km(b.t, z.ctr) - z.r)} km al ${rumbo(Math.atan2((z.ctr.lon - b.t.lon) * Math.cos((b.t.lat * Math.PI) / 180), z.ctr.lat - b.t.lat) * 180 / Math.PI)})` : ''}: ${b.dist} km desde ${esc(S.origin.label)} (~${driveHours(b.dist).toFixed(1)} h) · ${when}${z ? ` · círculo de ~${Math.round(z.r)} km` : ''}</p>
+      ${z2 ? `<p class="sub">Otra zona: <b>${esc(z2.name)}</b> · ${z2.v}</p>` : ''}
       <p class="sub conftxt">${conf(S.day).txt}</p>
-      <a class="go" href="${dirLink(b.t.lat, b.t.lon)}" target="_blank" rel="noopener">Cómo llegar →</a>
+      <a class="go" href="${dirLink(b.t.lat, b.t.lon)}" target="_blank" rel="noopener">Ruta a ${esc(b.t.name)} →</a>
     </div>
+    <p class="mlegend">Ingredientes en <b>${esc(b.t.name)}</b>:</p>
     <div class="metrics">${metricsHtml(b)}</div>
     <p class="mlegend"><span class="sw sw-good">rojo</span> favorece tornados · <span class="sw sw-mid">naranja</span> a medias · <span class="sw sw-low">gris</span> no ayuda · <a href="#guia">Guía: cómo leerlo y qué hacer ↓</a></p>
     <details class="how"><summary>¿Cómo se calcula el puntaje?</summary><ul>
@@ -338,7 +335,7 @@ function renderList(rank) {
     const lv = level(r.score);
     return `<li class="row" data-k="${k}">
       <span class="sc" style="background:${lv.color}">${r.score}</span>
-      <span><span class="nm">${esc(r.t.name)}</span> <small>${r.dist} km · ~${driveHours(r.dist).toFixed(1)} h · ${S.max ? 'pico ' : ''}${r.hour} · CAPE ${fx('cape', r.cape)} · cizalla ${fx('shear', r.shear)}/${fx('ll', r.ll)} · base ${fx('lcl', r.lcl)} m</small></span>
+      <span><span class="nm">${esc(r.t.name)}</span>${S.zones?.some((z) => km(r.t, z.ctr) <= z.r) ? ' <span class="inzone" title="Dentro de una zona de caza">🎯</span>' : ''} <small>${r.dist} km · ~${driveHours(r.dist).toFixed(1)} h · ${S.max ? 'pico ' : ''}${r.hour} · CAPE ${fx('cape', r.cape)} · cizalla ${fx('shear', r.shear)}/${fx('ll', r.ll)} · base ${fx('lcl', r.lcl)} m</small></span>
       <a class="go" href="${dirLink(r.t.lat, r.t.lon)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Ir</a>
       ${spark(r.t)}
     </li>`;
@@ -366,7 +363,7 @@ function renderTimebar() {
 function render() {
   if (!S.data) return;
   const rank = townsRanked();
-  renderGrid(); renderTowns(rank); renderHero(rank); renderPlan(); renderList(rank); renderTimebar(); renderSafety(); renderZones(); renderWrf();
+  renderGrid(); S.zones = huntZones(); renderTowns(rank); renderHero(rank); renderPlan(); renderList(rank); renderTimebar(); renderSafety(); renderZones(); renderWrf();
 }
 
 /* ---------------- Plan de caza ---------------- */
@@ -383,20 +380,30 @@ function peakFor(t, date) {
   return { t, i, v, h: +ts.slice(11, 13) + (ts.startsWith(date) ? 0 : 24) };
 }
 
+// Zonas de caza con el máximo del día (de 11 a 2 h), sin importar el control de hora.
+function dayZones(date) {
+  const idx = windowIdx(date);
+  const cells = S.data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: Math.max(0, ...idx.map((i) => S.data.grid.score[k][i] ?? 0)) }));
+  return findZones(cells, S.data.towns);
+}
 function renderPlan() {
   const el = $('#plan');
   const date = curDate();
   const peaks = S.data.towns.map((t) => peakFor(t, date)).filter(Boolean).sort((a, b) => b.v - a.v || km(S.origin, a.t) - km(S.origin, b.t));
-  const p = peaks[0];
+  // El plan usa siempre el máximo del día: zona de caza del día y su pueblo de destino.
+  const dz = dayZones(date)[0];
+  const goT = dz && goTo(dz, peaks.map((x) => ({ ...x, score: x.v }))).t;
+  const p = (goT && peaks.find((x) => x.t === goT)) || peaks[0];
   if (!p) { el.innerHTML = ''; return; }
+  const sc = dz ? dz.v : p.v; // puntaje del día = el de la zona
   const t = p.t, dist = Math.round(km(S.origin, t)), drive = driveHours(dist);
   const dayTxt = ['hoy', 'mañana', 'pasado mañana'][S.day];
   const head = (badge, cls, title) => `<div class="planhead"><h2>Plan de caza · ${dayTxt}</h2><span class="pbadge ${cls}">${badge}</span></div><p class="plantitle">${title}</p>`;
 
   // ¿Vale la pena?
-  if (p.v < 45) {
-    const other = dates().map((d, k) => ({ k, best: Math.max(0, ...S.data.towns.map((x) => peakFor(x, d)?.v ?? 0)) })).filter((x) => x.k !== S.day && x.best >= 45);
-    el.innerHTML = head('No salgas', 'no', `${dayTxt[0].toUpperCase() + dayTxt.slice(1)} no da: el mejor lugar (${esc(t.name)}) llega a ${p.v}. Faltan ingredientes para tormentas que giren.`)
+  if (sc < 45) {
+    const other = dates().map((d, k) => ({ k, best: dayZones(d)[0]?.v ?? 0 })).filter((x) => x.k !== S.day && x.best >= 45);
+    el.innerHTML = head('No salgas', 'no', `${dayTxt[0].toUpperCase() + dayTxt.slice(1)} no da: el máximo del día es ${sc}. Faltan ingredientes para tormentas que giren.`)
       + (other.length ? `<p class="sub">Mirá ${other.map((x) => `<b>${['hoy', 'mañana', 'pasado mañana'][x.k]}</b>`).join(' y ')}: ahí sí hay potencial.</p>` : '<p class="sub">Ningún día de los próximos tres tiene potencial. Quedate tranquilo.</p>');
     return;
   }
@@ -414,7 +421,7 @@ function renderPlan() {
   const hail = hasMove ? rumbo(mdir + 90) : 'sur';
 
   let badge = 'Vale salir', cls = 'go';
-  if (p.v < 65) { badge = 'Si estás cerca'; cls = 'maybe'; }
+  if (sc < 65) { badge = 'Si estás cerca'; cls = 'maybe'; }
   if (S.day === 2) { badge = 'Todavía no'; cls = 'maybe'; }
   if (night) { badge = 'De noche: no'; cls = 'no'; }
 
@@ -430,7 +437,7 @@ function renderPlan() {
   if (night) warn.push('El pico es <b>de noche</b>: no persigas. Mirá el radar desde un lugar techado.');
   if (S.day === 2) warn.push('Confianza baja: <b>no armes el viaje todavía</b>, volvé a mirar mañana.');
   if (S.day === 1) warn.push('Confianza media: revisá el plan mañana a la mañana antes de salir.');
-  if (p.v < 65) warn.push('Potencial moderado: vale si estás cerca. Lo más probable es ver tormentas fuertes, no tornados.');
+  if (sc < 65) warn.push('Potencial moderado: vale si estás cerca. Lo más probable es ver tormentas fuertes, no tornados.');
   if (late) warn.unshift(late);
   const warnHtml = warn.length ? `<div class="pwarn">${warn.map((w) => `<p>⚠️ ${w}</p>`).join('')}</div>` : '';
   const foot = '<p class="muted">Es un plan orientativo armado con el pronóstico: el lugar exacto lo define la tormenta el mismo día. Guiate por el radar y los avisos del SMN.</p>';
@@ -442,7 +449,7 @@ function renderPlan() {
       'Si estás en la zona, quedate en un <b>lugar techado y firme</b> (no en el auto) y seguí el radar y los avisos del SMN.',
       moveTxt,
     ];
-    el.innerHTML = head(badge, cls, `Zona: <b>${esc(t.name)}</b> · potencial ${p.v}`) + warnHtml
+    el.innerHTML = head(badge, cls, `${dz ? `Zona ${esc(dz.name)} · ` : ''}ir hacia <b>${esc(t.name)}</b> · potencial ${sc}`) + warnHtml
       + `<ol class="psteps">${steps.map((x) => `<li>${x}</li>`).join('')}</ol>` + foot;
     return;
   }
@@ -459,7 +466,7 @@ function renderPlan() {
   rows.push(['Mirando', `Buscá la base oscura y baja, y si gira. Si en el radar se te acerca, movete hacia el <b>${side}</b>.`]);
   rows.push([hm(sunset), '<b>Se pone el sol: volvé</b>, aunque la tormenta siga.']);
 
-  el.innerHTML = head(badge, cls, `Destino: <b>${esc(t.name)}</b> · potencial ${p.v}`) + warnHtml
+  el.innerHTML = head(badge, cls, `${dz ? `Zona ${esc(dz.name)} · ` : ''}ir hacia <b>${esc(t.name)}</b> · potencial ${sc}`) + warnHtml
     + `<h3 class="ptitle">Tu día, hora por hora</h3>`
     + `<table class="daytable"><tbody>${rows.map(([h, x]) => `<tr><td>${h}</td><td>${x}</td></tr>`).join('')}</tbody></table>`
     + (dist < 15 ? '' : `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, t)}" target="_blank" rel="noopener">Ruta a ${esc(t.name)} →</a></div>`)
@@ -650,7 +657,7 @@ function huntZones() {
 function renderZones() {
   zoneLayer.clearLayers();
   if (!S.layers.zonas) return;
-  huntZones().forEach((z, n) => {
+  (S.zones ?? []).forEach((z, n) => {
     const lv = level(z.v);
     const tip = `<b>Zona ${esc(z.name)}</b> · máximo ${z.v} (${lv.label.toLowerCase()})<br>Según el pronóstico, adentro de este círculo (~${Math.round(z.r)} km) es donde más chances hay de supercélulas con rotación. El lugar exacto lo define la tormenta el mismo día.<br><i>El ${z.v} es el punto más fuerte del círculo. Los pueblos de la lista tienen su propio puntaje, que puede ser menor si no están justo en ese punto.</i>`;
     L.circle([z.ctr.lat, z.ctr.lon], { pane: 'smn', radius: z.r * 1000, color: lv.color, weight: n ? 2 : 3, dashArray: '10 7', fillColor: lv.color, fillOpacity: 0.06 })
