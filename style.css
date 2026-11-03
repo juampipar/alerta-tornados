@@ -152,3 +152,9 @@ footer p { margin: 4px 0; }
 .how { grid-column: 1 / -1; font-size: .85rem; color: #c9d3e8; }
 .how summary { cursor: pointer; color: var(--ac); font-weight: 600; }
 .how ul { margin: 6px 0 0; padding-left: 18px; }
+
+/* Confianza del pronóstico por día */
+.conf { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: .7rem; letter-spacing: .03em; border: 1px solid currentColor; }
+.conf-alta { color: #3ddc97; } .conf-media { color: #ffd43b; } .conf-baja { color: #ff8c1a; }
+.conftxt { font-size: .8rem; margin-top: 4px; }
+.cdot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-left: 6px; vertical-align: middle; background: currentColor; }
