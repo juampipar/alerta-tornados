@@ -45,6 +45,8 @@ const data = await readJson(`${dir}/forecast.json`);
 const smn = await readJson(`${dir}/smn.json`);
 const state = (await readJson(STATE)) || {};
 state.smn ??= {}; state.days ??= {};
+// v2: los puntajes guardados antes eran de la zona mal calculada (sobre el río o Uruguay): se olvidan.
+if (state.v !== 2) { state.days = {}; state.v = 2; }
 const messages = [];
 const test = !!env.TEST;
 const quiet = nowMin >= 23 * 60 || nowMin < 7 * 60;
