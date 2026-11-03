@@ -45,7 +45,7 @@
       <div class="chips" id="layers">
         <button data-l="zonas" class="chip on">Potencial</button>
         <button data-l="smn" class="chip on">Avisos SMN</button>
-        <button data-l="radar" class="chip on">Radar</button>
+        <button data-l="radar" class="chip" title="RainViewer: casi sin cobertura en el centro de Argentina">Radar RV</button>
         <button data-l="sat" class="chip">Satélite</button>
         <button data-l="ir" class="chip">Infrarrojo</button>
       </div>
@@ -58,7 +58,12 @@
       </div>
     </div>
     <div id="tab-windy" class="pane" hidden>
-      <iframe title="Windy: CAPE" loading="lazy"
+      <div class="windysw" id="windysw">
+        <button class="chip on" data-o="cape">CAPE</button>
+        <button class="chip" data-o="radar">Radar (incluye radares del SMN)</button>
+        <a class="chip" id="windyopen" href="https://www.windy.com/-32.660/-62.300?cape,-32.660,-62.300,7" target="_blank" rel="noopener">Abrir en Windy ↗</a>
+      </div>
+      <iframe id="windyframe" title="Windy" loading="lazy"
         src="https://embed.windy.com/embed2.html?lat=-33.5&lon=-61.5&detailLat=-32.66&detailLon=-62.3&zoom=6&level=surface&overlay=cape&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C&radarRange=-1"></iframe>
     </div>
     <div class="timebar" id="timebar">

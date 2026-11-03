@@ -13,7 +13,7 @@ const WINDOW = [11, 2]; // de 11 h a 2 h del día siguiente: en el Pasillo mucha
 const S = {
   data: null, smn: null, all: false, day: 0, hour: Math.min(22, Math.max(11, nowArt().hour)), max: true,
   origin: { ...HOME, label: 'Leones' },
-  layers: { zonas: true, smn: true, radar: true, sat: false, ir: false },
+  layers: { zonas: true, smn: true, radar: false, sat: false, ir: false }, // RainViewer casi no cubre el centro de Argentina: apagado de entrada
 };
 
 /* ---------------- Mapa ---------------- */
@@ -83,7 +83,7 @@ async function loadRadar() {
       frames[fi].setOpacity(0);
       fi = (fi + 1) % frames.length;
       frames[fi].setOpacity(0.8);
-      stamp(`Radar ${fmt(radarTimes[fi], { hour: '2-digit', minute: '2-digit' })}${fi === frames.length - 1 ? ' · último' : ''}`);
+      if (S.layers.radar) stamp(`Radar ${fmt(radarTimes[fi], { hour: '2-digit', minute: '2-digit' })}${fi === frames.length - 1 ? ' · último' : ''}`);
     }, 700);
   } catch { stamp('Radar no disponible'); }
 }
@@ -508,6 +508,14 @@ $$('#origin button').forEach((b) => (b.onclick = () => {
 }));
 
 loadForecast(); loadSmn(); loadRadar();
+
+// Pestaña Windy: CAPE o radar (Windy tiene acceso a los radares del SMN).
+$$('#windysw button').forEach((b) => (b.onclick = () => {
+  $$('#windysw button').forEach((x) => x.classList.toggle('on', x === b));
+  const f = $('#windyframe'), o = b.dataset.o;
+  f.src = f.src.replace(/overlay=\w+/, 'overlay=' + o).replace(/zoom=\d+/, 'zoom=' + (o === 'radar' ? 7 : 6));
+  $('#windyopen').href = `https://www.windy.com/-32.660/-62.300?${o},-32.660,-62.300,7`;
+}));
 setInterval(loadRadar, 5 * 60e3);
 setInterval(() => { loadSmn(); }, 10 * 60e3);
 setInterval(() => { loadForecast(); }, 60 * 60e3);
