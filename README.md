@@ -32,6 +32,24 @@ Energía y viento se **multiplican**: `70 · √(energía · viento)`, con energ
 
 Indica dónde hay ingredientes; **no predice tornados**.
 
+## Alertas por Telegram
+Cada hora, el mismo workflow revisa los datos y te escribe si:
+- 🚨 el SMN emite un **aviso a corto plazo** que incluye Leones o está a menos de 200 km (a cualquier hora, una vez por aviso);
+- ⛈️ **hoy o mañana** alguna zona llega a **60** o más (una vez por día, y de nuevo si sube 10 puntos). Entre las 23 y las 7 h no manda avisos de pronóstico.
+
+El mensaje trae las 3 mejores zonas con hora pico, distancia, CAPE, cizalla, helicidad, base de nube, hacia dónde se mueven las tormentas y link a Google Maps.
+
+**Configuración (una sola vez):**
+1. En Telegram, hablale a **@BotFather** → `/newbot` → elegí nombre. Te da un **token**.
+2. Escribile cualquier cosa a tu bot nuevo (si no, no te puede escribir).
+3. Abrí `https://api.telegram.org/bot<TOKEN>/getUpdates` en el navegador y copiá el número de `"chat":{"id": ...}`. Ese es tu **chat id**.
+4. En GitHub: Settings → Secrets and variables → Actions → **New repository secret**: `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`.
+5. Probá: Actions → "Publicar panel" → Run workflow → tildá **prueba**. Te llega un resumen aunque no haya alerta.
+
+Opcional, en la pestaña **Variables** de esa misma pantalla: `MIN_SCORE` (umbral, 60 por defecto) y `RADIUS_KM` (radio para avisos SMN, 200 por defecto). Para un grupo, agregá el bot al grupo y usá el id del grupo (empieza con `-`).
+
+Local: `DRY_RUN=1 node scripts/alert.mjs .` muestra lo que mandaría sin enviarlo.
+
 ## Local
 ```bash
 node scripts/build-data.mjs .
@@ -39,5 +57,4 @@ python3 -m http.server
 ```
 
 ## Pendiente
-- Alertas a Telegram.
 - Verificar en producción la lectura del feed CAP del SMN (`https://ssl.smn.gob.ar/CAP/AR.php`): si el formato cambió, el panel muestra "sin datos" y el link a smn.gob.ar.
