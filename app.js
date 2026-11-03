@@ -37,6 +37,100 @@ function drawOrigin() {
 }
 drawOrigin();
 
+/* ---------------- Distancia segura y movimiento de tormentas ---------------- */
+// Círculos de 10 y 20 km alrededor de tu punto, flecha con hacia dónde van las tormentas
+// (pronóstico) y, para cada aviso a corto plazo del SMN, dónde estaría en 30 minutos.
+const SAFE_KM = 20, CLOSE_KM = 10;
+const safeLayer = L.layerGroup().addTo(map);
+const dest = (p, deg, d) => {
+  const r = (deg * Math.PI) / 180;
+  return { lat: p.lat + (d * Math.cos(r)) / 111.2, lon: p.lon + (d * Math.sin(r)) / (111.2 * Math.cos((p.lat * Math.PI) / 180)) };
+};
+function arrow(from, deg, d, opts, tip) {
+  const to = dest(from, deg, d), h = Math.max(2.5, d * 0.25);
+  const a1 = dest(to, deg + 155, h), a2 = dest(to, deg - 155, h);
+  const g = L.layerGroup([
+    L.polyline([[from.lat, from.lon], [to.lat, to.lon]], { pane: 'smn', interactive: !!tip, ...opts }),
+    L.polyline([[a1.lat, a1.lon], [to.lat, to.lon], [a2.lat, a2.lon]], { pane: 'smn', interactive: false, ...opts }),
+  ]);
+  if (tip) g.eachLayer((l) => l.bindTooltip?.(tip, { sticky: true }));
+  return g;
+}
+// Distancia (km) de un punto a un polígono: 0 si está adentro, si no al borde más cercano.
+function distToPoly(p, poly) {
+  if (inPoly([p.lat, p.lon], poly)) return 0;
+  const kx = 111.2 * Math.cos((p.lat * Math.PI) / 180), ky = 111.2;
+  let best = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const ax = (poly[j][1] - p.lon) * kx, ay = (poly[j][0] - p.lat) * ky;
+    const bx = (poly[i][1] - p.lon) * kx, by = (poly[i][0] - p.lat) * ky;
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2));
+    best = Math.min(best, Math.hypot(ax + t * dx, ay + t * dy));
+  }
+  return best;
+}
+const centroid = (poly) => ({ lat: poly.reduce((s, q) => s + q[0], 0) / poly.length, lon: poly.reduce((s, q) => s + q[1], 0) / poly.length });
+const bearing = (a, b) => (Math.atan2((b.lon - a.lon) * Math.cos((a.lat * Math.PI) / 180), b.lat - a.lat) * 180 / Math.PI + 360) % 360;
+// Movimiento de las tormentas del pronóstico en la localidad más cercana a un punto.
+function motionNear(p) {
+  if (!S.data) return null;
+  const t = S.data.towns.reduce((a, b) => (km(p, b) < km(p, a) ? b : a));
+  const i = pick(t.score, curDate()).i;
+  const dir = t.mdir?.[i], spd = t.mspd?.[i];
+  return dir == null || spd == null ? null : { dir, spd, town: t.name };
+}
+
+function renderSafety() {
+  safeLayer.clearLayers();
+  const o = S.origin, mv = motionNear(o);
+  L.circle([o.lat, o.lon], { pane: 'smn', radius: SAFE_KM * 1000, color: '#5fb4ff', weight: 2, dashArray: '6 6', fillColor: '#5fb4ff', fillOpacity: 0.05, interactive: false }).addTo(safeLayer);
+  L.circle([o.lat, o.lon], { pane: 'smn', radius: CLOSE_KM * 1000, color: '#ff3b5c', weight: 1.5, dashArray: '3 5', fill: false, interactive: false }).addTo(safeLayer);
+  if (mv) arrow(o, mv.dir, Math.max(8, mv.spd / 2), { color: '#5fb4ff', weight: 3, opacity: 0.9 },
+    `Las tormentas van hacia el <b>${rumbo(mv.dir)}</b> a ${mv.spd} km/h (pronóstico). En 30 min recorren ~${Math.round(mv.spd / 2)} km.`).addTo(safeLayer);
+
+  // Avisos a corto plazo: flecha a 30 min y el más cercano a vos.
+  let near = null;
+  for (const a of S.smn?.alerts ?? []) {
+    if (!a.shortTerm) continue;
+    for (const ar of a.areas) for (const poly of ar.polygons) {
+      const c = centroid(poly), m = motionNear(c);
+      if (m) arrow(c, m.dir, m.spd / 2, { color: '#ff3b5c', weight: 2.5, dashArray: '5 4' },
+        `<b>${esc(a.event || 'Aviso a corto plazo')}</b><br>En 30 min se movería ~${Math.round(m.spd / 2)} km hacia el ${rumbo(m.dir)} (según el pronóstico)`).addTo(safeLayer);
+      const d = distToPoly(o, poly);
+      if (!near || d < near.d) near = { d, c, m, a };
+    }
+  }
+  const el = $('#safeinfo');
+  if (!near) {
+    el.className = 'safeinfo';
+    el.innerHTML = `<b>Círculos:</b> 20 km (distancia segura) y 10 km (muy cerca)${mv ? ` · tormentas → <b>${rumbo(mv.dir)}</b> ${mv.spd} km/h` : ''}<br>Sin avisos a corto plazo del SMN ahora.`;
+    return;
+  }
+  const d = Math.round(near.d), from = rumbo(bearing(o, near.c));
+  // ¿Se te acerca? Comparo la dirección de la tormenta con la dirección desde la tormenta hacia vos.
+  let coming = '';
+  if (near.m) {
+    const toMe = bearing(near.c, o), diff = Math.abs(((near.m.dir - toMe + 540) % 360) - 180);
+    if (diff < 45 && d > 0) coming = ` · <b>viene hacia vos</b>: llegaría en ~${Math.round((d / near.m.spd) * 60)} min`;
+    else if (diff > 120) coming = ' · se aleja';
+    else coming = ' · pasa de costado';
+  }
+  const lvl = d === 0 ? 'in' : d <= CLOSE_KM ? 'close' : d <= SAFE_KM ? 'safe' : 'far';
+  const txt = {
+    in: '⚠️ <b>Estás dentro de un aviso a corto plazo.</b> Buscá un lugar firme y techado.',
+    close: `⚠️ Aviso a corto plazo a <b>${d} km</b> al ${from}: <b>demasiado cerca</b>`,
+    safe: `👀 Aviso a corto plazo a <b>${d} km</b> al ${from}: buena distancia para mirar`,
+    far: `Aviso a corto plazo más cercano: <b>${d} km</b> al ${from}`,
+  }[lvl];
+  el.className = 'safeinfo ' + lvl;
+  el.innerHTML = txt + (lvl === 'in' ? '' : coming);
+}
+
+// Con "Mi ubicación", seguir el GPS mientras manejás.
+let gpsWatch = null;
+function stopGps() { if (gpsWatch != null) navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; }
+
 // Satélite GOES (NASA GIBS). Probamos variantes de capa/formato y usamos la primera que responde.
 const GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/';
 const SAT_CANDIDATES = {
@@ -271,7 +365,7 @@ function renderTimebar() {
 function render() {
   if (!S.data) return;
   const rank = townsRanked();
-  renderGrid(); renderTowns(rank); renderHero(rank); renderPlan(); renderList(rank); renderTimebar();
+  renderGrid(); renderTowns(rank); renderHero(rank); renderPlan(); renderList(rank); renderTimebar(); renderSafety();
 }
 
 /* ---------------- Plan de caza ---------------- */
@@ -408,6 +502,7 @@ function inPoly([lat, lon], poly) {
   return ins;
 }
 function renderSmn() {
+  queueMicrotask(renderSafety);
   const el = $('#smn'), d = S.smn;
   smnLayer.clearLayers();
   if (!d || !d.ok) {
@@ -498,13 +593,25 @@ $('#play').onclick = () => {
 };
 $$('#origin button').forEach((b) => (b.onclick = () => {
   const set = (o) => { S.origin = o; $$('#origin button').forEach((x) => x.classList.toggle('on', x === b)); drawOrigin(); render(); renderSmn(); };
-  if (b.dataset.o === 'home') return set({ ...HOME, label: 'Leones' });
+  if (b.dataset.o === 'home') { stopGps(); return set({ ...HOME, label: 'Leones' }); }
   if (!navigator.geolocation) return alert('Tu navegador no da la ubicación.');
   b.textContent = '📍 Buscando…';
-  navigator.geolocation.getCurrentPosition(
-    (p) => { b.textContent = '📍 Mi ubicación'; set({ lat: p.coords.latitude, lon: p.coords.longitude, label: 'tu ubicación' }); },
-    () => { b.textContent = '📍 Mi ubicación'; alert('No se pudo obtener la ubicación.'); },
-    { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+  stopGps();
+  let first = true, last = null;
+  gpsWatch = navigator.geolocation.watchPosition(
+    (p) => {
+      const o = { lat: p.coords.latitude, lon: p.coords.longitude, label: 'tu ubicación' };
+      if (first) { first = false; b.textContent = '📍 Mi ubicación'; last = o; set(o); map.setView([o.lat, o.lon], 9); return; }
+      // Mientras manejás: mover el punto y los círculos; recalcular distancias cada 2 km.
+      S.origin = o; drawOrigin(); renderSafety();
+      if (km(o, last) >= 2) { last = o; render(); }
+    },
+    (e) => {
+      if (!first) return; // ya teníamos ubicación: seguimos esperando la próxima
+      b.textContent = '📍 Mi ubicación'; stopGps();
+      alert(e.code === 1 ? 'No diste permiso para usar la ubicación.' : 'No se pudo obtener la ubicación.');
+    },
+    { enableHighAccuracy: true, maximumAge: 30000 });
 }));
 
 loadForecast(); loadSmn(); loadRadar();

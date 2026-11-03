@@ -233,3 +233,8 @@ footer p { margin: 4px 0; }
 
 .windysw { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .windysw a.chip { text-decoration: none; }
+
+.safeinfo { position: absolute; left: 10px; bottom: 44px; z-index: 500; max-width: min(420px, calc(100% - 24px)); background: rgba(10,15,28,.88); border: 1px solid var(--line); border-left: 4px solid #5fb4ff; border-radius: 10px; padding: 8px 10px; font-size: .8rem; line-height: 1.35; pointer-events: none; }
+.safeinfo:empty { display: none; }
+.safeinfo.in, .safeinfo.close { border-left-color: #ff3b5c; }
+.safeinfo.safe { border-left-color: #3ddc97; }
