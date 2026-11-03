@@ -24,6 +24,7 @@
     </div>
   </div>
   <div class="status" id="status"></div>
+  <a class="howlink" href="#como-usar">❓ Cómo usar</a>
   <div class="seg" id="days" role="tablist" aria-label="Día"></div>
 </header>
 
@@ -96,6 +97,44 @@
 
 <!-- Fuera de .layout: así el panel "Dónde ir" (fijo al hacer scroll) no la tapa. -->
 <section class="guide" id="guia">
+    <article class="card wide howto" id="como-usar">
+      <h2>Cómo usar este sistema</h2>
+      <p class="muted"><b>Si no te llega nada por Telegram, ese día no da.</b> No hace falta mirar nada.</p>
+
+      <h3>Los 2 mensajes de Telegram</h3>
+      <ul>
+        <li><b>🌪️ Día de caza</b> (hoy o mañana): algún lugar del Pasillo llega a <b>60 o más</b>. Revisa todo el Pasillo, no solo cerca tuyo. Uno por día; otro si sube 10 puntos. Nada entre las 23 y las 7 h.</li>
+        <li><b>🚨 ¡Ya se están formando!</b>: en un día de caza, el SMN puso un aviso a corto plazo a menos de 200 km de Leones o cerca de la zona de caza. Las tormentas ya existen.</li>
+      </ul>
+
+      <h3>Qué es cada número</h3>
+      <ul>
+        <li><b>Potencial 0–100:</b> qué tan buenos son los ingredientes para tornado. <b>65+</b> alto, <b>45–64</b> moderado, menos de 45 no da.</li>
+        <li><b>Zona de caza (círculo):</b> el área con más potencial. El <b>“máx 75”</b> es el punto más fuerte adentro del círculo, que puede caer en el campo, entre pueblos.</li>
+        <li><b>Lista “Dónde ir”:</b> el puntaje <b>en cada pueblo</b>. Por eso un pueblo puede tener 69 y su zona “máx 75”: el pueblo no está justo en el punto más fuerte.</li>
+        <li><b>Otra zona:</b> un segundo lugar con buen potencial, lejos del primero. Elegí el que te quede mejor.</li>
+      </ul>
+
+      <h3>Por qué cambia todo el tiempo</h3>
+      <p class="muted">El pronóstico se recalcula <b>cada hora</b>, la lluvia del modelo del SMN <b>4 veces por día</b> y los avisos del SMN <b>cada 10 minutos</b>. Que la zona se corra 30–50 km es normal: mirá siempre lo último. Si se va a otra provincia, replanteá.</p>
+
+      <h3>El día de caza, paso a paso</h3>
+      <ol class="steps">
+        <li><b>La noche anterior</b> (llega “Día de caza · MAÑANA”): tocá <b>Mañana</b> → <b>Máx. del día</b>. Mirá el círculo y prendé <b>Lluvia SMN</b>: si hay rojo o lila adentro del círculo, buena señal. Decidí si vas.</li>
+        <li><b>A la mañana:</b> si llega “Día de caza · HOY”, va. Si no llegó nada nuevo, sigue igual; abrí el panel y fijate que la zona no se haya ido lejos.</li>
+        <li><b>Salir</b> a la hora del ⏰ del mensaje. Apuntá al <b>borde de la zona del lado de donde vienen las tormentas</b>, no al centro.</li>
+        <li><b>2–3 h antes del pico:</b> tocá <b>Mi ubicación</b> (círculos de 10 y 20 km). Mirá <b>Satélite</b> y <b>Radar</b> (Windy → Radar o Radar SMN) cada 10 minutos: buscá nubes o manchas que crecen.</li>
+        <li><b>Llega 🚨:</b> el cartel del mapa te dice a cuántos km está el aviso, si viene hacia vos y en cuántos minutos. Ubicate a <b>15–25 km</b>, del lado <b>norte o noreste</b> de la tormenta, mirando al oeste.</li>
+        <li><b>Volver:</b> si a las 19 h no se formó nada, no dio (pasa seguido). De noche no se persigue.</li>
+      </ol>
+
+      <h3>Las 3 reglas que no se negocian</h3>
+      <ol>
+        <li>Nunca adentro del rojo o lila del radar, ni dentro de tu círculo de 10 km.</li>
+        <li>Siempre con salida por asfalto hacia el norte o el este.</li>
+        <li>Rayos cerca: adentro del auto.</li>
+      </ol>
+    </article>
     <article class="card wide">
       <h2>Primera vez: por dónde arrancar</h2>
       <p class="muted">Tu primera meta <b>no es ver un tornado</b>: es ver una tormenta grande de lejos y volver sano. Los tornados llegan después de muchas salidas.</p>
@@ -139,7 +178,7 @@
       <ul>
         <li><b>Puntaje 0–100:</b> cuánto potencial hay de supercélulas, las tormentas que giran y pueden dar tornados. <b>65 o más</b> = día para salir; <b>45–64</b> = vale si estás cerca; <b>menos de 45</b> = casi seguro que no.</li>
         <li><b>Confianza:</b> hoy alta, mañana media, pasado baja. Pasado mañana es solo una tendencia.</li>
-        <li><b>Mejor zona:</b> el centro de una región de unos 100 km, no el lugar exacto.</li>
+        <li><b>Mejor localidad:</b> el pueblo con más puntaje. Es una referencia dentro de una región de unos 100 km, no el lugar exacto. El círculo de <b>zona de caza</b> muestra esa región.</li>
         <li><b>Pico a las X h:</b> la hora con mejores condiciones. Las tormentas suelen arrancar 1–2 h antes.</li>
         <li><b>Colores de los recuadros:</b> <span class="sw sw-good">rojo</span> favorece tornados, <span class="sw sw-mid">naranja</span> a medias, <span class="sw sw-low">gris</span> no ayuda.</li>
       </ul>

@@ -299,7 +299,7 @@ function renderHero(rank) {
   $('#hero').innerHTML = `
     <div class="gauge" style="--v:${b.score};--c:${lv.color}"><span>${b.score}<small>${lv.label}</small></span></div>
     <div>
-      <div class="kicker">Mejor zona · ${['hoy', 'mañana', 'pasado mañana'][S.day]} <span class="conf conf-${conf(S.day).k}">Confianza ${conf(S.day).k}</span></div>
+      <div class="kicker">Mejor localidad · ${['hoy', 'mañana', 'pasado mañana'][S.day]} <span class="conf conf-${conf(S.day).k}">Confianza ${conf(S.day).k}</span></div>
       <h2>${esc(b.t.name)}</h2>
       <p class="verdict">${verdict(b.score)}</p>
       <p class="sub">${b.dist} km desde ${esc(S.origin.label)} (~${driveHours(b.dist).toFixed(1)} h) · ${when}</p>
@@ -541,7 +541,7 @@ function renderSmn() {
   el.innerHTML = `<div class="smnhead"><h2>${short ? '🚨' : '⚠️'} Avisos oficiales SMN</h2><span class="muted">${d.alerts.length} zonas · ${upd}</span></div>` +
     gs.map((g) => `
       <details class="al ${g.mine ? 'mine' : ''}" style="--c:${g.c}" ${g.rank < 0 ? 'open' : ''}>
-        <summary><span class="tag">${esc(g.lbl)}</span><b>${esc(g.event)}</b> <span class="cnt">${new Set(g.zones).size === 1 ? "1 zona" : new Set(g.zones).size + " zonas"}</span>${g.mine ? ' · <u>incluye tu zona</u>' : ''}</summary>
+        <summary><span class="tag">${esc(g.lbl)}</span><b>${esc(g.event)}</b> ${new Set(g.zones).size ? `<span class="cnt">${new Set(g.zones).size === 1 ? '1 zona' : new Set(g.zones).size + ' zonas'}</span>` : ''}${g.mine ? ' · <u>incluye tu zona</u>' : ''}</summary>
         <small>${zonesTxt(g.zones)}</small>
         ${g.expires ? `<small>Hasta ${fmt(new Date(g.expires).toISOString())}</small>` : ''}
         ${g.desc ? `<p>${esc(g.desc)}</p>` : ''}${g.instruction ? `<p>${esc(g.instruction)}</p>` : ''}
@@ -652,11 +652,11 @@ function renderZones() {
   if (!S.layers.zonas) return;
   huntZones().forEach((z, n) => {
     const lv = level(z.v);
-    const tip = `<b>Zona ${esc(z.town.name)}</b> · potencial ${z.v} (${lv.label.toLowerCase()})<br>Según el pronóstico, adentro de este círculo (~${Math.round(z.r)} km) es donde más chances hay de supercélulas con rotación. El lugar exacto lo define la tormenta el mismo día.`;
+    const tip = `<b>Zona ${esc(z.name)}</b> · máximo ${z.v} (${lv.label.toLowerCase()})<br>Según el pronóstico, adentro de este círculo (~${Math.round(z.r)} km) es donde más chances hay de supercélulas con rotación. El lugar exacto lo define la tormenta el mismo día.<br><i>El ${z.v} es el punto más fuerte del círculo. Los pueblos de la lista tienen su propio puntaje, que puede ser menor si no están justo en ese punto.</i>`;
     L.circle([z.ctr.lat, z.ctr.lon], { pane: 'smn', radius: z.r * 1000, color: lv.color, weight: n ? 2 : 3, dashArray: '10 7', fillColor: lv.color, fillOpacity: 0.06 })
       .bindTooltip(tip, { sticky: true }).addTo(zoneLayer);
     // Etiqueta arriba del círculo; la de la segunda zona, abajo, para que no se pisen.
-    L.marker([z.ctr.lat + (n ? -1 : 1) * (z.r / 111.2), z.ctr.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'zonelabel' + (n ? ' below' : ''), html: `<span style="--c:${lv.color}">Zona ${esc(z.town.name)} · ${z.v}</span>`, iconSize: null }) }).addTo(zoneLayer);
+    L.marker([z.ctr.lat + (n ? -1 : 1) * (z.r / 111.2), z.ctr.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'zonelabel' + (n ? ' below' : ''), html: `<span style="--c:${lv.color}">Zona ${esc(z.name)} · máx ${z.v}</span>`, iconSize: null }) }).addTo(zoneLayer);
   });
 }
 
