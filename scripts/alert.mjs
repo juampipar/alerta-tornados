@@ -10,7 +10,7 @@
 //     cerca de Leones o de las zonas marcadas. Los avisos del SMN de días comunes no se mandan.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { HOME, level, km, driveHours, rumbo, huntZones } from '../lib/risk.mjs';
+import { HOME, level, km, driveHours, rumbo, huntZones, goTo } from '../lib/risk.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -91,8 +91,15 @@ const words = {
   lcl: (v) => (v < 1000 ? 'baja ✅' : v < 1500 ? 'media' : 'alta (más granizo que tornado)'),
 };
 
+// Km desde el pueblo de destino hasta el borde de la zona (0 si está adentro).
+const outside = (z, b) => (z ? Math.max(0, Math.round(km(b.t, z.ctr) - z.r)) : 0);
+
+// Puntaje del día = el de la zona de caza principal (o el mejor pueblo si no hay zona).
+const dayScore = (date, rank) => zonesFor(date)[0]?.v ?? rank[0]?.score ?? 0;
+
 function huntMessage(date, label, rank, prev) {
-  const b = rank[0], lv = level(b.score), s = b.s;
+  const zs = zonesFor(date), z = zs[0];
+  const b = z ? goTo(z, rank) : rank[0], score = z ? z.v : b.score, lv = level(score), s = b.s;
   const drive = driveHours(b.dist);
   const leaveMin = b.peakMin - 60 - drive * 60; // llegar ~1 h antes del pico
   const late = date === today && leaveMin <= nowMin;
@@ -103,36 +110,33 @@ function huntMessage(date, label, rank, prev) {
     srh != null && `🌀 Giro cerca del suelo (helicidad ${srh}): ${words.srh(srh)}`,
     s('lcl') != null && `☁️ Base de nube (${s('lcl')} m): ${words.lcl(s('lcl'))}`,
   ].filter(Boolean);
-  const others = rank.slice(1, 4).filter((r) => r.score >= Math.max(25, MIN - 20))
-    .map((r) => `• ${esc(r.t.name)} <b>${r.score}</b> · ${clock(r.peakMin)} h · ${r.dist} km`);
   const mov = s('mdir') == null ? null : `➡️ Las tormentas van hacia el <b>${rumbo(s('mdir'))}</b> a ${s('mspd')} km/h`;
   // Zona de caza: el círculo del mapa.
-  const zs = zonesFor(date), z = zs[0];
   const zone = !z ? [] : (() => {
     const dc = Math.round(km(HOME, z.ctr)), edge = Math.max(0, Math.round(dc - z.r));
     return [
-      `🎯 <b>Zona de caza: ${esc(z.name)}</b> · máx ${z.v} (círculo de ~${Math.round(z.r)} km)`,
+      `🎯 <b>Zona de caza: ${esc(z.name)}</b> (círculo de ~${Math.round(z.r)} km)`,
       edge === 0 ? '   <b>Leones está dentro de la zona</b>' : `   El borde está a ${edge} km de Leones, hacia el ${rumbo(bearing(HOME, z.ctr))}`,
-      ...(zs[1] ? [`   Otra zona: ${esc(zs[1].name)} · máx ${zs[1].v}`] : []),
+      ...(zs[1] ? [`   Otra zona: ${esc(zs[1].name)} · ${zs[1].v}`] : []),
       `   <a href="${pin(z.ctr.lat, z.ctr.lon)}">Ver el centro de la zona</a>`,
       '',
     ];
   })();
   return [
-    b.score >= MIN ? `🌪️ <b>DÍA DE CAZA · ${label}</b> <i>${dayName(date)}</i>` : `🧪 <b>Prueba · ${label}</b> <i>${dayName(date)}</i> · hoy no da para salir`,
-    `Potencial de tornado <b>${lv.label.toUpperCase()} · ${b.score}/100</b>${prev >= 0 ? ` <i>(subió de ${prev})</i>` : ''}`,
+    score >= MIN ? `🌪️ <b>DÍA DE CAZA · ${label}</b> <i>${dayName(date)}</i>` : `🧪 <b>Prueba · ${label}</b> <i>${dayName(date)}</i> · hoy no da para salir`,
+    `Potencial de tornado <b>${lv.label.toUpperCase()} · ${score}/100</b>${prev >= 0 ? ` <i>(subió de ${prev})</i>` : ''}`,
     '',
     ...zone,
-    `📍 Mejor localidad: <b>${esc(b.t.name)} (${b.score})</b> · pico a las ${clock(b.peakMin)} h`,
+    `📍 Ir hacia: <b>${esc(b.t.name)}</b> · pico a las ${clock(b.peakMin)} h`,
+    outside(z, b) && `   <i>(pueblo más cercano: la zona empieza ${outside(z, b)} km al ${rumbo(bearing(b.t, z.ctr))})</i>`,
     `🚗 ${b.dist} km, ~${dur(drive)} desde Leones`,
     !late ? `⏰ Salir a las <b>${clock(leaveMin)}</b> para llegar 1 h antes`
       : nowMin + drive * 60 <= b.peakMin + 60 ? `⏰ <b>Salí ya</b>: llegás a las ${clock(nowMin + drive * 60)} h, a tiempo para el pico`
       : '⏰ Ya es tarde para llegar al pico: seguí el radar y buscá lo más cercano',
     mov,
     '',
-    `<b>Ingredientes</b>`,
+    `<b>Ingredientes en ${esc(b.t.name)}</b>`,
     ...ing,
-    ...(others.length ? ['', '<b>Otras zonas</b>', ...others] : []),
     '',
     `<a href="${maps(b.t.lat, b.t.lon)}">🗺️ Ruta a ${esc(b.t.name)}</a>  ·  <a href="${PANEL}">📡 Radar y mapa</a>`,
     `<i>Es potencial según el modelo, no un aviso de tornado.</i>`,
@@ -144,12 +148,12 @@ if (data) {
   for (const [off, label] of [[0, 'HOY'], [1, 'MAÑANA']]) {
     const date = addDays(today, off);
     const rank = (ranks[date] = bestTowns(date));
-    const b = rank[0];
-    if (!b) continue;
+    if (!rank[0]) continue;
+    const sc = dayScore(date, rank);
     const prev = state.days[date] ?? -1;
-    const fire = b.score >= MIN && b.score >= prev + 10 && !quiet;
-    if (fire) state.days[date] = b.score;
-    if (fire || (test && (off === 0 || b.score >= MIN))) messages.push(huntMessage(date, label, rank, fire ? prev : -1));
+    const fire = sc >= MIN && sc >= prev + 10 && !quiet;
+    if (fire) state.days[date] = sc;
+    if (fire || (test && (off === 0 || sc >= MIN))) messages.push(huntMessage(date, label, rank, fire ? prev : -1));
   }
 }
 
@@ -167,23 +171,25 @@ const distTo = (a, p) => Math.min(Infinity, ...pts(a).map(([lat, lon]) => km(p, 
 const covers = (a, p) => a.areas.some((ar) => ar.polygons.some((poly) => inPoly([p.lat, p.lon], poly)));
 
 const todayRank = ranks[today] ?? [];
-const huntDay = (todayRank[0]?.score ?? 0) >= MIN;
-const zones = todayRank.filter((r) => r.score >= MIN).slice(0, 5);
+const todayScore = data && todayRank[0] ? dayScore(today, todayRank) : 0;
+const huntDay = todayScore >= MIN;
+const zones = data ? zonesFor(today) : [];
 const live = [];
 for (const a of smn?.alerts ?? []) {
   if (!a.shortTerm || state.smn[a.id] || !huntDay) continue;
   const home = covers(a, HOME), dHome = Math.round(distTo(a, HOME));
-  const zone = zones.map((z) => ({ z, d: covers(a, z.t) ? 0 : distTo(a, z.t) })).filter((x) => x.d <= NEAR_ZONE).sort((x, y) => x.d - y.d)[0]?.z;
+  // Cerca de una zona de caza: dentro del círculo o a menos de NEAR_ZONE km de su borde.
+  const zone = zones.map((z) => ({ z, d: covers(a, z.ctr) ? 0 : Math.max(0, distTo(a, z.ctr) - z.r) })).filter((x) => x.d <= NEAR_ZONE).sort((x, y) => x.d - y.d)[0]?.z;
   if (!home && !zone && dHome > RADIUS) continue;
   state.smn[a.id] = a.expires || new Date().toISOString();
   const areas = [...new Set(a.areas.map((x) => title(x.desc).replace(/\.$/, '')).filter(Boolean))];
   live.push(`• <b>${esc(cap((a.event || a.headline || 'Tormentas').toLowerCase()))}</b>: ${esc(areas.slice(0, 4).join(', '))}${areas.length > 4 ? ` +${areas.length - 4}` : ''}` +
-    `\n   ${home ? '📍 <b>incluye Leones</b>' : `a ${dHome} km de Leones`}${zone ? ` · cerca de ${esc(zone.t.name)}` : ''}${a.expires ? ` · hasta las ${hhmm(a.expires)}` : ''}`);
+    `\n   ${home ? '📍 <b>incluye Leones</b>' : `a ${dHome} km de Leones`}${zone ? ` · en la zona ${esc(zone.name)}` : ''}${a.expires ? ` · hasta las ${hhmm(a.expires)}` : ''}`);
 }
 if (live.length) {
   messages.push([
     `🚨 <b>¡YA SE ESTÁN FORMANDO!</b>`,
-    `Hoy es día de caza (potencial ${todayRank[0].score}) y el SMN puso ${live.length === 1 ? 'un aviso' : `${live.length} avisos`} a corto plazo:`,
+    `Hoy es día de caza (potencial ${todayScore}) y el SMN puso ${live.length === 1 ? 'un aviso' : `${live.length} avisos`} a corto plazo:`,
     '',
     ...live.slice(0, 6),
     ...(live.length > 6 ? [`…y ${live.length - 6} más`] : []),

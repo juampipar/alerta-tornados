@@ -1,6 +1,7 @@
 // Genera <out>/data/forecast.json y <out>/data/smn.json. Uso: node scripts/build-data.mjs _site
-// Con REUSE_FORECAST=<url del forecast.json publicado> reusa el pronóstico si tiene menos de 75 min
-// (las corridas de cada 10 minutos solo renuevan los avisos del SMN y no gastan cuota de Open-Meteo).
+// Con REUSE_FORECAST=<url del forecast.json publicado> reusa el pronóstico si tiene menos de ~2 h.
+// Así el pronóstico se recalcula cada 2 horas (cuota gratuita de Open-Meteo) y las demás corridas
+// solo renuevan los avisos del SMN.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { buildDataset } from '../lib/risk.mjs';
 import { fetchSmn, SMN_FEED } from '../lib/smn.mjs';
@@ -13,7 +14,7 @@ async function published(url) {
     const r = await fetch(url, { cache: 'no-store' });
     if (!r.ok) return null;
     const d = await r.json();
-    return Date.now() - Date.parse(d.generated) < 75 * 60e3 ? d : null;
+    return Date.now() - Date.parse(d.generated) < 115 * 60e3 ? d : null;
   } catch { return null; }
 }
 

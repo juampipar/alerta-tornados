@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 
 BUCKET = 'https://smn-ar-wrf.s3.amazonaws.com'
-BBOX = dict(s=-37.5, n=-30.0, w=-66.0, e=-57.0)  # mismo recorte que la grilla del panel
+BBOX = dict(s=-37.5, n=-30.0, w=-67.0, e=-57.0)  # mismo recorte que la grilla del panel
 STEP = 0.05  # grados de longitud por pixel (~4,7 km)
 ROWS = 160
 ART = timezone(timedelta(hours=-3))
