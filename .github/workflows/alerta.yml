@@ -1,0 +1,20 @@
+name: Alerta Telegram
+on:
+  schedule:
+    - cron: '0 11 * * *'   # 08:00 ART
+    - cron: '0 15 * * *'   # 12:00 ART
+    - cron: '0 18 * * *'   # 15:00 ART
+  workflow_dispatch:
+jobs:
+  alerta:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/alert.mjs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MIN_SCORE: '60'
+          ALWAYS: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
