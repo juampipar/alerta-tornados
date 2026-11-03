@@ -185,7 +185,14 @@ function renderHero(rank) {
       ${coreTxt}
       <a class="go" href="${dirLink(b.t.lat, b.t.lon)}" target="_blank" rel="noopener">Cómo llegar →</a>
     </div>
-    <div class="metrics">${metricsHtml(b)}</div>`;
+    <div class="metrics">${metricsHtml(b)}</div>
+    <details class="how"><summary>¿Cómo se calcula el puntaje?</summary><ul>
+      <li><b>Energía × viento:</b> se multiplican. Sin CAPE no hay tormenta por más viento que haya; sin cizalladura la tormenta no se organiza ni rota.</li>
+      <li><b>Cizalladura 0–6 km</b> (≥20 m/s ideal) organiza supercélulas; la <b>0–1,5 km</b> (≥10 m/s) es la que más se asocia a tornados.</li>
+      <li>Suman: Lifted Index muy negativo, rocío ≥18 °C y que el modelo genere lluvia (la tormenta efectivamente se dispara).</li>
+      <li>Restan: aire seco (rocío &lt;14 °C) y “tapa” fuerte (CIN &gt;100), que puede impedir que se formen.</li>
+      <li>Se toma la mejor hora entre las 11 y las 22 h. Es un pronóstico de ingredientes, no un aviso de tornado.</li>
+    </ul></details>`;
 }
 
 function spark(t) {
@@ -263,30 +270,39 @@ function renderSmn() {
       <a href="https://www.smn.gob.ar/alertas" target="_blank" rel="noopener">smn.gob.ar/alertas</a>.</p>`;
     return;
   }
-  const al = d.alerts.map((a) => {
+  // El SMN emite un aviso por zona: los agrupamos por tipo + nivel.
+  const groups = new Map();
+  for (const a of d.alerts) {
     const [c, lbl, rank] = a.shortTerm ? ['#ff3b5c', 'Aviso a corto plazo', -1] : alertColor(a);
     const mine = a.areas.some((ar) => ar.polygons.some((p) => inPoly([S.origin.lat, S.origin.lon], p)));
     for (const ar of a.areas) for (const p of ar.polygons)
       L.polygon(p, { pane: 'smn', color: c, weight: a.shortTerm ? 3 : 1.5, fillColor: c, fillOpacity: a.shortTerm ? 0.25 : 0.12, dashArray: a.shortTerm ? null : '4 4' })
-        .bindTooltip(`<b>${esc(a.event || a.headline)}</b><br>${esc(lbl)} · hasta ${a.expires ? fmt(a.expires) : '–'}`).addTo(smnLayer);
-    return { a, c, lbl, rank, mine };
-  }).sort((x, y) => x.rank - y.rank || y.mine - x.mine);
+        .bindTooltip(`<b>${esc(a.event || a.headline)}</b><br>${esc(ar.desc)}<br>${esc(lbl)} · hasta ${a.expires ? fmt(a.expires) : '–'}`).addTo(smnLayer);
+    const key = `${lbl}|${a.event || a.headline}`;
+    const g = groups.get(key) || { c, lbl, rank, event: a.event || a.headline, zones: [], mine: false, expires: 0, desc: a.description, instruction: a.instruction };
+    g.zones.push(...a.areas.map((x) => x.desc).filter(Boolean));
+    g.mine ||= mine;
+    g.expires = Math.max(g.expires, Date.parse(a.expires) || 0);
+    groups.set(key, g);
+  }
+  const gs = [...groups.values()].sort((x, y) => x.rank - y.rank || y.mine - x.mine || y.zones.length - x.zones.length);
   const upd = `actualizado ${fmt(d.fetched, { hour: '2-digit', minute: '2-digit' })}`;
-  if (!al.length) {
+  if (!gs.length) {
     el.className = 'card smn none';
     el.innerHTML = `<div class="smnhead"><h2>✅ Sin avisos oficiales del SMN en el Pasillo</h2><span class="muted">${upd}</span></div>`;
     return;
   }
-  el.className = 'card smn';
-  el.innerHTML = `<div class="smnhead"><h2>⚠️ Avisos oficiales SMN (${al.length})</h2><span class="muted">${upd}</span></div>` +
-    al.slice(0, 8).map(({ a, c, lbl, mine }) => `
-      <div class="al ${mine ? 'mine' : ''}" style="--c:${c}">
-        <b><span class="tag">${esc(lbl)}</span>${esc(a.event || a.headline)}${mine ? ' · <u>incluye tu zona</u>' : ''}</b>
-        <small>${esc(a.areas.map((x) => x.desc).filter(Boolean).join(' · ').slice(0, 220))}</small>
-        <small>${a.onset || a.effective ? `Desde ${fmt(a.onset || a.effective)} · ` : ''}hasta ${a.expires ? fmt(a.expires) : '–'}</small>
-        ${a.description ? `<details><summary>Detalle</summary>${esc(a.description)}${a.instruction ? `<p>${esc(a.instruction)}</p>` : ''}</details>` : ''}
-      </div>`).join('') +
-    (al.length > 8 ? `<p class="muted">Y ${al.length - 8} más en <a href="https://www.smn.gob.ar/alertas" target="_blank" rel="noopener">smn.gob.ar</a>.</p>` : '');
+  const short = gs.some((g) => g.rank < 0);
+  el.className = 'card smn' + (short ? ' hot' : '');
+  const zonesTxt = (z) => { const u = [...new Set(z)]; return esc(u.slice(0, 6).join(' · ')) + (u.length > 6 ? ` <b>+${u.length - 6} zonas</b>` : ''); };
+  el.innerHTML = `<div class="smnhead"><h2>${short ? '🚨' : '⚠️'} Avisos oficiales SMN</h2><span class="muted">${d.alerts.length} zonas · ${upd}</span></div>` +
+    gs.map((g) => `
+      <details class="al ${g.mine ? 'mine' : ''}" style="--c:${g.c}" ${g.rank < 0 ? 'open' : ''}>
+        <summary><span class="tag">${esc(g.lbl)}</span><b>${esc(g.event)}</b> <span class="cnt">${new Set(g.zones).size === 1 ? "1 zona" : new Set(g.zones).size + " zonas"}</span>${g.mine ? ' · <u>incluye tu zona</u>' : ''}</summary>
+        <small>${zonesTxt(g.zones)}</small>
+        ${g.expires ? `<small>Hasta ${fmt(new Date(g.expires).toISOString())}</small>` : ''}
+        ${g.desc ? `<p>${esc(g.desc)}</p>` : ''}${g.instruction ? `<p>${esc(g.instruction)}</p>` : ''}
+      </details>`).join('');
 }
 
 /* ---------------- Estado / carga ---------------- */
@@ -318,12 +334,12 @@ async function loadSmn() {
 
 /* ---------------- Controles ---------------- */
 function showTab(t) {
-  $$('#tabs button').forEach((x) => x.classList.toggle('on', x.dataset.t === t));
-  for (const k of ['map', 'windy', 'rayos']) $('#tab-' + k).hidden = k !== t;
+  $$('#tabs button[data-t]').forEach((x) => x.classList.toggle('on', x.dataset.t === t));
+  for (const k of ['map', 'windy']) $('#tab-' + k).hidden = k !== t;
   $('#layers').style.visibility = $('#timebar').style.visibility = t === 'map' ? 'visible' : 'hidden';
   if (t === 'map') map.invalidateSize();
 }
-$$('#tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.t)));
+$$('#tabs button[data-t]').forEach((b) => (b.onclick = () => showTab(b.dataset.t)));
 $('#hour').oninput = (e) => { S.hour = +e.target.value; S.max = false; render(); };
 $('#maxbtn').onclick = () => { S.max = !S.max; render(); };
 let playT = null;
