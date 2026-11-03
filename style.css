@@ -43,14 +43,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .layout {
   max-width: 1400px; margin: 0 auto; padding: 16px; display: grid; gap: 14px;
   grid-template-columns: minmax(0, 1fr) 400px;
-  grid-template-areas: "hero rank" "smn rank" "map rank";
+  grid-template-areas: "hero rank" "plan rank" "smn rank" "map rank";
   align-items: start;
 }
 .smn { grid-area: smn; } .hero { grid-area: hero; } .mapcard { grid-area: map; } .rank { grid-area: rank; position: sticky; top: 80px; max-height: calc(100vh - 96px); overflow: auto; }
 .guide { max-width: 1400px; margin: 0 auto; padding: 0 16px 16px; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .card { background: linear-gradient(180deg, #141d34, var(--card)); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; min-width: 0; }
 @media (max-width: 1000px) {
-  .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "smn" "map" "rank"; }
+  .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "plan" "smn" "map" "rank"; }
   .rank { position: static; max-height: none; }
 }
 
@@ -83,7 +83,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .m.good { border-color: rgba(255, 59, 92, .55); } .m.good em { color: #ff7a90; }
 .m.mid { border-color: rgba(255, 140, 26, .5); } .m.mid em { color: var(--orange); }
 .m.low em { color: var(--mut); }
-.hero .go, .row .go { display: inline-flex; align-items: center; gap: 6px; background: var(--ac); color: #04121f; padding: 8px 14px; border-radius: 9px; font-weight: 700; text-decoration: none; font-size: .85rem; margin-top: 6px; }
+.hero .go, .row .go, .pbtns .go { display: inline-flex; align-items: center; gap: 6px; background: var(--ac); color: #04121f; padding: 8px 14px; border-radius: 9px; font-weight: 700; text-decoration: none; font-size: .85rem; margin-top: 6px; }
 
 /* Map */
 .mapcard { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -169,3 +169,23 @@ footer p { margin: 4px 0; }
 .gtable th { color: var(--mut); font-weight: 600; font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
 .gtable td:last-child { white-space: nowrap; }
 @media (min-width: 900px) { .guide > article:first-child { grid-column: span 2; } }
+
+/* Plan de caza */
+.plan { grid-area: plan; }
+.plan:empty { display: none; }
+.planhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.planhead h2 { margin: 0; }
+.pbadge { padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: .8rem; border: 1px solid currentColor; }
+.pbadge.go { color: var(--red); } .pbadge.maybe { color: var(--orange); } .pbadge.no { color: var(--mut); }
+.plantitle { margin: 8px 0 4px; font-size: 1.05rem; }
+.pwarn { background: rgba(255, 140, 26, .08); border: 1px solid rgba(255, 140, 26, .35); border-radius: 10px; padding: 4px 12px; margin: 10px 0; font-size: .88rem; }
+.pwarn p { margin: 6px 0; }
+.psteps { margin: 10px 0; padding-left: 20px; color: #c9d3e8; font-size: .92rem; }
+.psteps li { margin-bottom: 8px; }
+.psteps a, .plan .sub a { color: var(--ac); }
+.pbtns { margin: 6px 0 12px; }
+.pcols { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.pcols > div { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.pcols h3 { margin: 0 0 4px; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--mut); }
+.pcols ul { margin: 0; padding-left: 16px; font-size: .85rem; color: #c9d3e8; }
+.pcols li { margin-bottom: 4px; }

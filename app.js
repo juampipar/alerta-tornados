@@ -1,4 +1,4 @@
-import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours } from './lib/risk.mjs';
+import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo } from './lib/risk.mjs';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -270,7 +270,95 @@ function renderTimebar() {
 function render() {
   if (!S.data) return;
   const rank = townsRanked();
-  renderGrid(); renderTowns(rank); renderHero(rank); renderList(rank); renderTimebar();
+  renderGrid(); renderTowns(rank); renderHero(rank); renderPlan(); renderList(rank); renderTimebar();
+}
+
+/* ---------------- Plan de caza ---------------- */
+// Arma un plan para novatos con el pico de cada localidad (siempre el máximo del día, sin importar el control de hora).
+const hm = (h) => { const m = Math.round((((h % 24) + 24) % 24) * 4) * 15; return `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`; };
+const mapsDir = (o, d) => `https://www.google.com/maps/dir/?api=1&origin=${o.lat},${o.lon}&destination=${d.lat},${d.lon}&travelmode=driving`;
+const mapsNear = (q, t) => `https://www.google.com/maps/search/${encodeURIComponent(q)}/@${t.lat},${t.lon},13z`;
+
+function peakFor(t, date) {
+  let v = -1, i = -1;
+  for (const k of windowIdx(date)) if (t.score[k] > v) { v = t.score[k]; i = k; }
+  if (i < 0) return null;
+  const ts = S.data.times[i];
+  return { t, i, v, h: +ts.slice(11, 13) + (ts.startsWith(date) ? 0 : 24) };
+}
+
+function renderPlan() {
+  const el = $('#plan');
+  const date = curDate();
+  const peaks = S.data.towns.map((t) => peakFor(t, date)).filter(Boolean).sort((a, b) => b.v - a.v || km(S.origin, a.t) - km(S.origin, b.t));
+  const p = peaks[0];
+  if (!p) { el.innerHTML = ''; return; }
+  const t = p.t, dist = Math.round(km(S.origin, t)), drive = driveHours(dist);
+  const dayTxt = ['hoy', 'mañana', 'pasado mañana'][S.day];
+  const head = (badge, cls, title) => `<div class="planhead"><h2>Plan de caza · ${dayTxt}</h2><span class="pbadge ${cls}">${badge}</span></div><p class="plantitle">${title}</p>`;
+
+  // ¿Vale la pena?
+  if (p.v < 45) {
+    const other = dates().map((d, k) => ({ k, best: Math.max(0, ...S.data.towns.map((x) => peakFor(x, d)?.v ?? 0)) })).filter((x) => x.k !== S.day && x.best >= 45);
+    el.innerHTML = head('No salgas', 'no', `${dayTxt[0].toUpperCase() + dayTxt.slice(1)} no da: el mejor lugar (${esc(t.name)}) llega a ${p.v}. Faltan ingredientes para tormentas que giren.`)
+      + (other.length ? `<p class="sub">Mirá ${other.map((x) => `<b>${['hoy', 'mañana', 'pasado mañana'][x.k]}</b>`).join(' y ')}: ahí sí hay potencial.</p>` : '<p class="sub">Ningún día de los próximos tres tiene potencial. Quedate tranquilo.</p>');
+    return;
+  }
+
+  const sunset = sunsetHour(t.lat, t.lon, date);
+  const start = Math.max(11, p.h - 2); // las tormentas suelen arrancar 1–2 h antes del pico
+  const arrive = start - 1; // llegar 1 h antes para esperar tranquilo
+  const leave = arrive - drive;
+  const night = p.h >= sunset + 0.5;
+  const now = nowArt(), nowH = S.day === 0 && now.date === date ? now.hour : -1;
+  const mdir = t.mdir?.[p.i], mspd = t.mspd?.[p.i];
+  const hasMove = mdir != null && mspd != null;
+  const from = hasMove ? rumbo(mdir + 180) : 'oeste', to = hasMove ? rumbo(mdir) : 'este';
+  const side = hasMove ? rumbo(mdir - 90) : 'norte'; // en el hemisferio sur: lado izquierdo de la trayectoria (entra el aire cálido)
+  const hail = hasMove ? rumbo(mdir + 90) : 'sur';
+
+  let badge = 'Vale salir', cls = 'go';
+  if (p.v < 65) { badge = 'Si estás cerca'; cls = 'maybe'; }
+  if (S.day === 2) { badge = 'Todavía no'; cls = 'maybe'; }
+  if (night) { badge = 'De noche: no'; cls = 'no'; }
+
+  let when;
+  if (nowH >= 0 && nowH > p.h) when = `<b>El pico ya pasó</b> (${hm(p.h)}). No salgas ahora.`;
+  else if (nowH >= 0 && nowH + 0.25 >= leave) when = `<b>Si vas, salí ya:</b> llegás a eso de las ${hm(nowH + drive + 0.25)}.`;
+  else if (dist < 15) when = `<b>Estás en la zona:</b> no hace falta viajar. Estate listo desde las ${hm(arrive)}.`;
+  else when = `<b>Salí a las ${hm(leave)}</b> desde ${esc(S.origin.label)} (${dist} km, ~${drive.toFixed(1)} h) y llegás ${hm(arrive)}.`;
+
+  const moveTxt = hasMove ? `<b>Hacia dónde van las tormentas:</b> vienen del <b>${from}</b> y van hacia el <b>${to}</b> a unos <b>${mspd} km/h</b>.` : '';
+  const steps = night ? [
+    `Las tormentas pueden arrancar desde las <b>${hm(start)}</b> y el pico es a las <b>${hm(p.h)}</b>, con el sol ya puesto (${hm(sunset)}).`,
+    '<b>No salgas a perseguir:</b> de noche los tornados no se ven y acá muchos vienen envueltos en lluvia.',
+    'Si estás en la zona, quedate en un <b>lugar techado y firme</b> (no en el auto) y seguí el radar y los avisos del SMN.',
+    ...(moveTxt ? [moveTxt] : []),
+  ] : [
+    `${when} Las tormentas pueden arrancar desde las <b>${hm(start)}</b>; el pico es a las <b>${hm(p.h)}</b>.`,
+    `<b>Dónde parar:</b> en una estación de servicio de <b>${esc(t.name)}</b> (<a href="${mapsNear('estación de servicio', t)}" target="_blank" rel="noopener">ver en el mapa</a>). Cargá nafta, baño y esperá mirando el radar.`,
+    hasMove ? `<b>Hacia dónde van las tormentas:</b> vienen del <b>${from}</b> y van hacia el <b>${to}</b> a unos <b>${mspd} km/h</b>.${mspd >= 50 ? ' <b>Son rápidas:</b> no las persigas por detrás, dejá que vengan hacia vos.' : ''}` : `<b>Hacia dónde van:</b> en general vienen del oeste/noroeste y van hacia el este/sudeste.`,
+    `<b>De qué lado ponerte:</b> cuando en el radar aparezca una tormenta aislada al ${from}, acercate hasta quedar a <b>15–25 km</b>, del lado <b>${side}</b> de su camino. Ahí suele entrar el aire cálido y se ve la base. Del lado <b>${hail}</b> caen la lluvia y el granizo.`,
+    `<b>Nunca te pongas en su camino</b> (al ${to} de la tormenta, en la misma línea). Tu escape es hacia el <b>${side}</b>, por ruta asfaltada.`,
+    `<b>Empezá a volver a las ${hm(sunset)}</b>, cuando se pone el sol: de noche no se ve nada.`,
+  ];
+
+  const warn = [];
+  if (night) warn.push('El pico es <b>de noche</b>: no persigas. Mirá el radar desde un lugar techado.');
+  if (S.day === 2) warn.push('Confianza baja: <b>no armes el viaje todavía</b>, volvé a mirar mañana.');
+  if (S.day === 1) warn.push('Confianza media: revisá el plan mañana a la mañana antes de salir.');
+  if (p.v < 65) warn.push('Potencial moderado: vale si estás cerca. Lo más probable es ver tormentas fuertes, no tornados.');
+
+  el.innerHTML = head(badge, cls, `Destino: <b>${esc(t.name)}</b> · potencial ${p.v}`)
+    + (warn.length ? `<div class="pwarn">${warn.map((w) => `<p>⚠️ ${w}</p>`).join('')}</div>` : '')
+    + `<ol class="psteps">${steps.map((x) => `<li>${x}</li>`).join('')}</ol>`
+    + (night || dist < 15 ? '' : `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, t)}" target="_blank" rel="noopener">Ruta a ${esc(t.name)} →</a></div>`)
+    + (night ? '' : `<div class="pcols">
+        <div><h3>Llevá</h3><ul><li>Tanque lleno y celular cargado (cargador en el auto)</li><li>Mapas de la zona descargados sin conexión</li><li>Agua, algo para comer y un acompañante</li></ul></div>
+        <div><h3>Volvé si…</h3><ul><li>Empieza a caer granizo o no ves nada por la lluvia</li><li>El SMN emite aviso a muy corto plazo justo donde estás</li><li>Se hace de noche o la ruta se inunda</li></ul></div>
+        <div><h3>Nunca</h3><ul><li>Caminos de tierra con lluvia</li><li>Entrar al núcleo oscuro del radar</li><li>Parar debajo de un puente</li></ul></div>
+      </div>`)
+    + `<p class="muted">Es un plan orientativo armado con el pronóstico: el lugar exacto lo define la tormenta el mismo día. Guiate por el radar y los avisos del SMN.</p>`;
 }
 
 /* ---------------- Avisos SMN ---------------- */
