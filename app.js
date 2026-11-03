@@ -1,4 +1,5 @@
 import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo } from './lib/risk.mjs';
+import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -322,44 +323,72 @@ function renderPlan() {
   if (S.day === 2) { badge = 'Todavía no'; cls = 'maybe'; }
   if (night) { badge = 'De noche: no'; cls = 'no'; }
 
-  let when;
-  if (nowH >= 0 && nowH > p.h) when = `<b>El pico ya pasó</b> (${hm(p.h)}). No salgas ahora.`;
-  else if (nowH >= 0 && nowH + 0.25 >= leave) when = `<b>Si vas, salí ya:</b> llegás a eso de las ${hm(nowH + drive + 0.25)}.`;
-  else if (dist < 15) when = `<b>Estás en la zona:</b> no hace falta viajar. Estate listo desde las ${hm(arrive)}.`;
-  else when = `<b>Salí a las ${hm(leave)}</b> desde ${esc(S.origin.label)} (${dist} km, ~${drive.toFixed(1)} h) y llegás ${hm(arrive)}.`;
+  let late = '';
+  if (nowH >= 0 && nowH > p.h) late = `<b>El pico ya pasó</b> (${hm(p.h)}). No salgas ahora.`;
+  else if (nowH >= 0 && dist >= 15 && nowH + 0.25 >= leave) late = `<b>Si vas, salí ya:</b> llegás a eso de las ${hm(nowH + drive + 0.25)}.`;
 
-  const moveTxt = hasMove ? `<b>Hacia dónde van las tormentas:</b> vienen del <b>${from}</b> y van hacia el <b>${to}</b> a unos <b>${mspd} km/h</b>.` : '';
-  const steps = night ? [
-    `Las tormentas pueden arrancar desde las <b>${hm(start)}</b> y el pico es a las <b>${hm(p.h)}</b>, con el sol ya puesto (${hm(sunset)}).`,
-    '<b>No salgas a perseguir:</b> de noche los tornados no se ven y acá muchos vienen envueltos en lluvia.',
-    'Si estás en la zona, quedate en un <b>lugar techado y firme</b> (no en el auto) y seguí el radar y los avisos del SMN.',
-    ...(moveTxt ? [moveTxt] : []),
-  ] : [
-    `${when} Las tormentas pueden arrancar desde las <b>${hm(start)}</b>; el pico es a las <b>${hm(p.h)}</b>.`,
-    `<b>Dónde parar:</b> en una estación de servicio de <b>${esc(t.name)}</b> (<a href="${mapsNear('estación de servicio', t)}" target="_blank" rel="noopener">ver en el mapa</a>). Cargá nafta, baño y esperá mirando el radar.`,
-    hasMove ? `<b>Hacia dónde van las tormentas:</b> vienen del <b>${from}</b> y van hacia el <b>${to}</b> a unos <b>${mspd} km/h</b>.${mspd >= 50 ? ' <b>Son rápidas:</b> no las persigas por detrás, dejá que vengan hacia vos.' : ''}` : `<b>Hacia dónde van:</b> en general vienen del oeste/noroeste y van hacia el este/sudeste.`,
-    `<b>De qué lado ponerte:</b> cuando en el radar aparezca una tormenta aislada al ${from}, acercate hasta quedar a <b>15–25 km</b>, del lado <b>${side}</b> de su camino. Ahí suele entrar el aire cálido y se ve la base. Del lado <b>${hail}</b> caen la lluvia y el granizo.`,
-    `<b>Nunca te pongas en su camino</b> (al ${to} de la tormenta, en la misma línea). Tu escape es hacia el <b>${side}</b>, por ruta asfaltada.`,
-    `<b>Empezá a volver a las ${hm(sunset)}</b>, cuando se pone el sol: de noche no se ve nada.`,
-  ];
+  const moveTxt = hasMove
+    ? `<b>Hacia dónde van:</b> vienen del <b>${from}</b> y van hacia el <b>${to}</b> a unos <b>${mspd} km/h</b>.${mspd >= 50 ? ' <b>Son rápidas:</b> no las persigas por detrás, dejá que vengan hacia vos.' : ''}`
+    : '<b>Hacia dónde van:</b> en general vienen del oeste/noroeste y van hacia el este/sudeste.';
 
   const warn = [];
   if (night) warn.push('El pico es <b>de noche</b>: no persigas. Mirá el radar desde un lugar techado.');
   if (S.day === 2) warn.push('Confianza baja: <b>no armes el viaje todavía</b>, volvé a mirar mañana.');
   if (S.day === 1) warn.push('Confianza media: revisá el plan mañana a la mañana antes de salir.');
   if (p.v < 65) warn.push('Potencial moderado: vale si estás cerca. Lo más probable es ver tormentas fuertes, no tornados.');
+  if (late) warn.unshift(late);
+  const warnHtml = warn.length ? `<div class="pwarn">${warn.map((w) => `<p>⚠️ ${w}</p>`).join('')}</div>` : '';
+  const foot = '<p class="muted">Es un plan orientativo armado con el pronóstico: el lugar exacto lo define la tormenta el mismo día. Guiate por el radar y los avisos del SMN.</p>';
 
-  el.innerHTML = head(badge, cls, `Destino: <b>${esc(t.name)}</b> · potencial ${p.v}`)
-    + (warn.length ? `<div class="pwarn">${warn.map((w) => `<p>⚠️ ${w}</p>`).join('')}</div>` : '')
-    + `<ol class="psteps">${steps.map((x) => `<li>${x}</li>`).join('')}</ol>`
-    + (night || dist < 15 ? '' : `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, t)}" target="_blank" rel="noopener">Ruta a ${esc(t.name)} →</a></div>`)
-    + (night ? '' : `<div class="pcols">
+  if (night) {
+    const steps = [
+      `Las tormentas pueden arrancar desde las <b>${hm(start)}</b> y el pico es a las <b>${hm(p.h)}</b>, con el sol ya puesto (${hm(sunset)}).`,
+      '<b>No salgas a perseguir:</b> de noche los tornados no se ven y acá muchos vienen envueltos en lluvia.',
+      'Si estás en la zona, quedate en un <b>lugar techado y firme</b> (no en el auto) y seguí el radar y los avisos del SMN.',
+      moveTxt,
+    ];
+    el.innerHTML = head(badge, cls, `Zona: <b>${esc(t.name)}</b> · potencial ${p.v}`) + warnHtml
+      + `<ol class="psteps">${steps.map((x) => `<li>${x}</li>`).join('')}</ol>` + foot;
+    return;
+  }
+
+  // Tu día, hora por hora.
+  const station = `<a href="${mapsNear('estación de servicio', t)}" target="_blank" rel="noopener">una estación de servicio de ${esc(t.name)}</a>`;
+  const rows = [];
+  if (leave >= 11) rows.push(['10:00', 'Mirá el panel: ¿sigue en “Vale salir”? ¿Hay avisos del SMN en la zona?']);
+  if (leave >= 12.5) rows.push(['12:00', 'Decidí si vas. Si el puntaje bajó mucho o el plan cambió de zona, no vayas.']);
+  if (dist >= 15) rows.push([hm(leave), `<b>Salí</b> desde ${esc(S.origin.label)} hacia ${esc(t.name)} (${dist} km, ~${drive.toFixed(1)} h). Tanque lleno y celular cargado.`]);
+  rows.push([hm(arrive), dist >= 15 ? `<b>Llegá</b> a ${station}. Baño, comida y nafta.` : `<b>Estás en la zona:</b> esperá en ${station}. Baño, comida y nafta.`]);
+  rows.push([`${hm(start)}–${hm(p.h)}`, `Mirá el radar <b>cada 10 minutos</b>. Buscá una tormenta <b>aislada</b> que crezca rápido, hacia el ${from}.`]);
+  rows.push(['Cuando aparece', `Mirá en la animación hacia dónde va. Acercate hasta quedar a <b>~20 km</b>, del lado <b>${side}</b> (mirá el dibujo).`]);
+  rows.push(['Mirando', `Buscá la base oscura y baja, y si gira. Si en el radar se te acerca, movete hacia el <b>${side}</b>.`]);
+  rows.push([hm(sunset), '<b>Se pone el sol: volvé</b>, aunque la tormenta siga.']);
+
+  el.innerHTML = head(badge, cls, `Destino: <b>${esc(t.name)}</b> · potencial ${p.v}`) + warnHtml
+    + `<h3 class="ptitle">Tu día, hora por hora</h3>`
+    + `<table class="daytable"><tbody>${rows.map(([h, x]) => `<tr><td>${h}</td><td>${x}</td></tr>`).join('')}</tbody></table>`
+    + (dist < 15 ? '' : `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, t)}" target="_blank" rel="noopener">Ruta a ${esc(t.name)} →</a></div>`)
+    + `<h3 class="ptitle">Dónde pararte</h3>
+      <div class="dwrap">${stormDiagram(hasMove ? mdir : 100)}
+        <ul>
+          <li>${moveTxt}</li>
+          <li><b>Vos</b> (verde): adelante y al costado, del lado <b>${side}</b>, a unos 20 km. Desde ahí se ve la base y entra el aire cálido.</li>
+          <li><b>Granizo y lluvia</b> (violeta y celeste): del lado <b>${hail}</b>. No te metas ahí.</li>
+          <li><b>Rotación</b> (rojo): atrás, del lado ${side}. En el hemisferio sur gira en sentido <b>horario</b>.</li>
+          <li><b>Escape</b>: hacia el <b>${side}</b>, por ruta asfaltada. <b>Nunca</b> te pongas en su camino (al ${to} de la tormenta).</li>
+          ${hasMove ? '' : '<li class="muted">Sin dato de movimiento: el dibujo usa la dirección típica.</li>'}
+        </ul>
+      </div>`
+    + `<div class="pcols">
         <div><h3>Llevá</h3><ul><li>Tanque lleno y celular cargado (cargador en el auto)</li><li>Mapas de la zona descargados sin conexión</li><li>Agua, algo para comer y un acompañante</li></ul></div>
         <div><h3>Volvé si…</h3><ul><li>Empieza a caer granizo o no ves nada por la lluvia</li><li>El SMN emite aviso a muy corto plazo justo donde estás</li><li>Se hace de noche o la ruta se inunda</li></ul></div>
         <div><h3>Nunca</h3><ul><li>Caminos de tierra con lluvia</li><li>Entrar al núcleo oscuro del radar</li><li>Parar debajo de un puente</li></ul></div>
-      </div>`)
-    + `<p class="muted">Es un plan orientativo armado con el pronóstico: el lugar exacto lo define la tormenta el mismo día. Guiate por el radar y los avisos del SMN.</p>`;
+      </div>` + foot;
 }
+
+/* ---------------- Guía (dibujos fijos) ---------------- */
+$('#guide-diagram').innerHTML = stormDiagram(90);
+$('#radar-shapes').innerHTML = radarShapes();
 
 /* ---------------- Avisos SMN ---------------- */
 const SEV = { Extreme: ['#ff3b5c', 'Rojo', 0], Severe: ['#ff8c1a', 'Naranja', 1], Moderate: ['#ffd43b', 'Amarillo', 2], Minor: ['#3ddc97', 'Verde', 3] };

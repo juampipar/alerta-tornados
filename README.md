@@ -8,6 +8,8 @@ Publicado en https://juampipar.github.io/alerta-tornados/
 - **Avisos oficiales del SMN** (formato CAP) filtrados al Pasillo, con los *avisos a muy corto plazo* destacados y marcados si incluyen tu zona. También se dibujan en el mapa.
 - **Mejor zona del día** con veredicto y métricas: CAPE, cizalladura 0–6 km y 0–1 km, helicidad 0–1 km (SRH), base de nube (LCL), punto de rocío, CIN y Lifted Index.
 - **Plan de caza** para novatos: si vale salir, destino, dónde parar (estación de servicio), a qué hora salir, hacia dónde y a qué velocidad van las tormentas, de qué lado ponerse, escape y hora de volver (puesta del sol). Si el pico es de noche, avisa que no hay que perseguir.
+- **Dibujo de la tormenta vista desde arriba**, girado según hacia dónde van ese día: dónde cae el granizo, dónde está la rotación, dónde pararse y por dónde escapar.
+- **Guía para la primera vez** (tres etapas, errores de novato) y **cómo leer el radar** (colores y formas: celda aislada, línea, gancho).
 - **Mapa** con grilla de potencial (0,75°), localidades, radar animado (RainViewer), satélite GOES visible e infrarrojo (NASA GIBS) y avisos SMN.
 - **Control de hora** para ver la evolución del día, y **Hoy / Mañana / Pasado**.
 - **Ranking "Dónde ir"** con distancia y tiempo desde Leones o desde tu ubicación (GPS), curva del día y botón a Google Maps.

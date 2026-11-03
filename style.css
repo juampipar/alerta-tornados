@@ -168,7 +168,8 @@ footer p { margin: 4px 0; }
 .gtable th, .gtable td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .gtable th { color: var(--mut); font-weight: 600; font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
 .gtable td:last-child { white-space: nowrap; }
-@media (min-width: 900px) { .guide > article:first-child { grid-column: span 2; } }
+@media (min-width: 900px) { .guide > .wide { grid-column: span 2; } }
+.guide h3 { margin: 14px 0 4px; font-size: .95rem; }
 
 /* Plan de caza */
 .plan { grid-area: plan; }
@@ -189,3 +190,43 @@ footer p { margin: 4px 0; }
 .pcols h3 { margin: 0 0 4px; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--mut); }
 .pcols ul { margin: 0; padding-left: 16px; font-size: .85rem; color: #c9d3e8; }
 .pcols li { margin-bottom: 4px; }
+
+/* Dibujo de la tormenta y formas de radar */
+.diagram { width: 100%; max-width: 380px; height: auto; display: block; margin: 6px auto; }
+.diagram text { font: 600 15px system-ui, sans-serif; fill: #c9d3e8; }
+.diagram .d-small { font-size: 13px; font-weight: 500; fill: var(--mut); }
+.d-rain { fill: rgba(95, 180, 255, .18); stroke: rgba(95, 180, 255, .5); stroke-width: 1.5; }
+.d-hail { fill: rgba(190, 40, 220, .45); stroke: #be28dc; stroke-width: 1.5; }
+.diagram .d-hail-t { fill: #f0c8ff; }
+.d-rot { fill: rgba(255, 59, 92, .25); stroke: var(--red); stroke-width: 2; }
+.d-spin { fill: none; stroke: var(--red); stroke-width: 2.5; }
+.diagram .d-rot-t { fill: #ff7a90; }
+.d-move { stroke: #c9d3e8; stroke-width: 3; }
+.diagram .d-move-t { fill: #eef2fa; }
+.d-nogo-bg { fill: rgba(255, 59, 92, .06); } .d-nogo-line { stroke: rgba(255, 59, 92, .35); stroke-width: 3; }
+.d-nogo { stroke: rgba(255, 59, 92, .6); stroke-dasharray: 6 5; stroke-width: 1.5; }
+.diagram .d-nogo-t { fill: #ff7a90; font-size: 13px; }
+.d-you { fill: var(--ok); stroke: #0a0f1c; stroke-width: 2; }
+.diagram .d-you-t { fill: var(--ok); font-weight: 800; }
+.d-escape { stroke: var(--ok); stroke-width: 2.5; stroke-dasharray: 7 5; }
+.d-dist { stroke: var(--mut); stroke-width: 1; stroke-dasharray: 3 4; }
+.d-north line { stroke: var(--mut); stroke-width: 2; } .d-north text { fill: var(--mut); font-size: 13px; }
+.dwrap { display: grid; gap: 12px; grid-template-columns: minmax(0, 380px) 1fr; align-items: center; margin: 8px 0 12px; }
+@media (max-width: 700px) { .dwrap { grid-template-columns: 1fr; } }
+.dwrap ul { margin: 0; padding-left: 18px; font-size: .88rem; color: #c9d3e8; }
+.dwrap li { margin-bottom: 6px; }
+.rshapes { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 10px 0; }
+.rshape { margin: 0; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: .84rem; color: #c9d3e8; }
+.rshape.good { border-color: rgba(61, 220, 151, .45); }
+.rshape svg { width: 100%; height: 80px; display: block; }
+.rshape .r1 { fill: rgba(95, 180, 255, .45); } .rshape .r2 { fill: #ffd43b; } .rshape .r3 { fill: #ff3b5c; }
+.rshape .thick { fill: none; stroke: rgba(95, 180, 255, .55); stroke-width: 16; stroke-linecap: round; }
+.rshape .mid { fill: none; stroke: #ffd43b; stroke-width: 6; stroke-linecap: round; }
+.rshape .hookring { fill: none; stroke: var(--ok); stroke-width: 2; stroke-dasharray: 3 3; }
+.rscale { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin: 6px 0 2px; }
+.rscale i { flex: 1; }
+.rscale-l { display: flex; justify-content: space-between; font-size: .75rem; color: var(--mut); }
+.daytable { width: 100%; border-collapse: collapse; font-size: .86rem; margin: 6px 0 12px; }
+.daytable td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; color: #c9d3e8; }
+.daytable td:first-child { white-space: nowrap; font-weight: 700; color: var(--tx); width: 1%; }
+.plan h3.ptitle { margin: 14px 0 4px; font-size: .95rem; }

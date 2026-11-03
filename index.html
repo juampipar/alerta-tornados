@@ -84,7 +84,45 @@
 
 <!-- Fuera de .layout: así el panel "Dónde ir" (fijo al hacer scroll) no la tapa. -->
 <section class="guide" id="guia">
-    <article class="card">
+    <article class="card wide">
+      <h2>Primera vez: por dónde arrancar</h2>
+      <p class="muted">Tu primera meta <b>no es ver un tornado</b>: es ver una tormenta grande de lejos y volver sano. Los tornados llegan después de muchas salidas.</p>
+      <ol class="steps">
+        <li><b>Etapa 1 · En casa (1–2 semanas).</b> Los días con tormentas, abrí el radar del panel y mirá la animación: hacia dónde se mueven y cómo crecen. Buscá fotos y videos de nubes pared, nubes estante y “scud” para aprender a diferenciarlas (abajo, en “Cómo leer el radar” y “Qué mirar en el lugar”).</li>
+        <li><b>Etapa 2 · Primera salida corta.</b> Un día con tormentas a menos de 50 km de casa, de día y por asfalto, con alguien más. Paren en un lugar abierto a 20–30 km de la tormenta y practiquen: ubicarse en el radar, decir hacia dónde va y moverse una vez para quedar de costado. Vuelvan temprano.</li>
+        <li><b>Etapa 3 · Un día de verdad.</b> Cuando el panel diga <b>Vale salir</b> (65 o más), seguí el <b>Plan de caza</b> de arriba: horario, dónde parar y de qué lado ponerte.</li>
+      </ol>
+      <h3>Lo que más lastima a los cazadores no es el tornado</h3>
+      <p class="muted">Es <b>manejar</b>: rutas mojadas, apuro y mirar el celular al volante. Después vienen rayos, granizo y agua sobre la ruta. Por eso: uno maneja, el otro mira el radar.</p>
+      <h3>Errores típicos de novato</h3>
+      <ul>
+        <li><b>Salir tarde</b> y terminar persiguiendo la tormenta por detrás.</li>
+        <li><b>Meterse en la lluvia</b> para “ver mejor”: adentro no se ve nada y el granizo rompe el auto.</li>
+        <li><b>Caminos de tierra:</b> con lluvia quedás encajado.</li>
+        <li><b>Ir solo</b>, u obsesionarse con el tornado y olvidarse de la salida.</li>
+        <li><b>Confundir</b> una nube estante o jirones bajos (“scud”) con un tornado. Lo que importa es si <b>gira</b>.</li>
+      </ul>
+    </article>
+    <article class="card wide">
+      <h2>Cómo leer el radar</h2>
+      <p class="muted">El radar del panel muestra dónde llueve y con qué fuerza. Tocá ▶ para ver la animación de la última hora.</p>
+      <div class="rscale" aria-hidden="true"><i style="background:#9be7ff"></i><i style="background:#4aa3ff"></i><i style="background:#1c5fd6"></i><i style="background:#ffd43b"></i><i style="background:#ff8c1a"></i><i style="background:#ff3b5c"></i><i style="background:#ff66d9"></i></div>
+      <div class="rscale-l"><span>lluvia débil</span><span>fuerte</span><span>muy fuerte / granizo</span></div>
+      <p class="muted">Cuanto más cálido el color, más fuerte. Lo rojo, rosa o violeta es donde <b>nunca</b> hay que estar. El radar del SMN usa otra escala (verde → amarillo → rojo → violeta), pero la idea es la misma.</p>
+      <h3>Qué forma buscar</h3>
+      <div class="rshapes" id="radar-shapes"></div>
+      <h3>La tormenta vista desde arriba</h3>
+      <div class="dwrap"><div id="guide-diagram"></div>
+        <ul>
+          <li>Ejemplo con la tormenta yendo hacia el <b>este</b>. El <b>Plan de caza</b> gira este dibujo según hacia dónde van las tormentas ese día.</li>
+          <li><b>Vos</b> (verde): adelante y al costado izquierdo de su camino, a unos 20 km.</li>
+          <li><b>Granizo</b> (violeta) y <b>lluvia</b> (celeste): adelante a la derecha.</li>
+          <li><b>Rotación</b> (rojo): atrás a la izquierda, girando en sentido horario. Ahí se forma la nube pared.</li>
+          <li><b>Nunca</b> en su camino (la franja rayada). Tu escape es hacia el costado.</li>
+        </ul>
+      </div>
+    </article>
+    <article class="card wide">
       <h2>Cómo leer el panel</h2>
       <ul>
         <li><b>Puntaje 0–100:</b> cuánto potencial hay de supercélulas, las tormentas que giran y pueden dar tornados. <b>65 o más</b> = día para salir; <b>45–64</b> = vale si estás cerca; <b>menos de 45</b> = casi seguro que no.</li>
