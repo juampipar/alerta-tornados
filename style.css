@@ -252,3 +252,6 @@ footer p { margin: 4px 0; }
 .howto h3 { margin-top: 14px; }
 #como-usar { scroll-margin-top: 90px; }
 .inzone { font-size: .8rem; }
+
+.tracklabel span { display: inline-block; transform: translate(-50%, -50%); font-size: .7rem; font-weight: 700; color: #fff; background: rgba(10,15,28,.8); border: 1px solid rgba(255,255,255,.4); border-radius: 6px; padding: 0 4px; white-space: nowrap; }
+.vpmark span { display: inline-block; transform: translate(-50%, -50%); font-size: 1.4rem; filter: drop-shadow(0 0 3px #000); }
