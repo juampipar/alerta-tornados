@@ -6,7 +6,7 @@ Publicado en https://juampipar.github.io/alerta-tornados/
 
 ## Qué tiene
 - **Avisos oficiales del SMN** (formato CAP) filtrados al Pasillo, con los *avisos a muy corto plazo* destacados y marcados si incluyen tu zona. También se dibujan en el mapa.
-- **Mejor zona del día** con veredicto y métricas: CAPE, cizalladura 0–6 km y 0–1,5 km, punto de rocío, CIN y Lifted Index.
+- **Mejor zona del día** con veredicto y métricas: CAPE, cizalladura 0–6 km y 0–1 km, helicidad 0–1 km (SRH), base de nube (LCL), punto de rocío, CIN y Lifted Index.
 - **Mapa** con grilla de potencial (0,75°), localidades, radar animado (RainViewer), satélite GOES visible e infrarrojo (NASA GIBS) y avisos SMN.
 - **Control de hora** para ver la evolución del día, y **Hoy / Mañana / Pasado**.
 - **Ranking "Dónde ir"** con distancia y tiempo desde Leones o desde tu ubicación (GPS), curva del día y botón a Google Maps.
@@ -18,7 +18,16 @@ El workflow `Publicar panel` corre **cada hora** (y en cada push a `main`): `scr
 GitHub pausa los workflows programados tras 60 días sin actividad en el repo: si deja de actualizarse, reactivalo en Actions.
 
 ## Índice de potencial (0–100)
-Energía y viento se **multiplican**: `70 · √(energía · viento)`, con energía = CAPE/2500 y viento = 70% cizalladura 0–6 km/20 m/s + 30% cizalladura 0–1,5 km/10 m/s. Sin CAPE no hay puntaje aunque sople fuerte en altura, y con poca cizalladura (tormentas de “pulso”) se castiga. Suman LI, rocío ≥18 °C y precipitación del modelo; restan aire seco y CIN fuerte. Se toma la mejor hora entre las 11 y las 22 h. Indica dónde hay ingredientes; **no predice tornados**.
+Energía y viento se **multiplican**: `70 · √(energía · viento)`, con energía = CAPE/2500 y viento = 55% cizalladura 0–6 km/20 m/s + 25% helicidad 0–1 km/100 m²/s² + 20% cizalladura 0–1 km/10 m/s.
+
+- **Perfil de viento real**: se interpola el viento entre 10 m y los niveles de 925, 850, 700, 500 y 400 hPa usando su altura geopotencial. Los niveles que quedan bajo tierra se descartan, y las zonas de más de 1200 m (sierras) no se puntúan.
+- **Helicidad (SRH) 0–1 km** con el movimiento de Bunkers de la supercélula que se desvía a la **izquierda**, la ciclónica en el hemisferio sur. Por eso la helicidad favorable es **negativa**.
+- **Techo por cizalladura**: con 0–6 km < 15 m/s el puntaje no pasa de 55 (Moderado), y con < 10 m/s no pasa de 35 (Bajo). Mucho CAPE sin viento da granizo y ráfagas, no supercélulas.
+- **Base de nube (LCL ≈ 125 m × (T − Td))**: ideal < 1000 m; se castiga en forma gradual hasta × 0,55 por encima de 2000 m.
+- Suman: LI, rocío ≥18 °C, precipitación del modelo y días de mucha cizalla con poco CAPE y base baja (otoño/invierno). Restan: aire muy seco y CIN fuerte. Si el modelo no da CIN o LI, se muestra "sin dato" y no se asume nada.
+- Se toma la mejor hora entre las **11 h y las 2 h del día siguiente**: en el Pasillo muchas tormentas severas son nocturnas, por el chorro de bajo nivel.
+
+Indica dónde hay ingredientes; **no predice tornados**.
 
 ## Local
 ```bash

@@ -7,7 +7,7 @@ const pad = (n) => String(n).padStart(2, '0');
 const TZ = 'America/Argentina/Cordoba';
 const fmt = (iso, o = { weekday: 'short', hour: '2-digit', minute: '2-digit' }) => new Date(iso).toLocaleString('es-AR', { timeZone: TZ, ...o });
 const nowArt = () => { const d = new Date(Date.now() - 3 * 3600e3); return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours() }; };
-const WINDOW = [11, 22]; // horas en que se buscan las tormentas
+const WINDOW = [11, 2]; // de 11 h a 2 h del día siguiente: en el Pasillo muchas tormentas severas son nocturnas (chorro de bajo nivel)
 
 const S = {
   data: null, smn: null, all: false, day: 0, hour: Math.min(22, Math.max(11, nowArt().hour)), max: true,
@@ -100,7 +100,16 @@ $$('#layers .chip').forEach((b) => (b.onclick = () => {
 const dates = () => [...new Set(S.data.times.map((t) => t.slice(0, 10)))];
 const curDate = () => dates()[S.day];
 const idxAt = (date, h) => S.data.times.indexOf(`${date}T${pad(h)}:00`);
-const windowIdx = (date) => S.data.times.flatMap((t, i) => (t.startsWith(date) && +t.slice(11, 13) >= WINDOW[0] && +t.slice(11, 13) <= WINDOW[1] ? [i] : []));
+const nextDate = (date) => new Date(Date.parse(date + 'T12:00:00Z') + 864e5).toISOString().slice(0, 10);
+const windowIdx = (date) => {
+  const nd = nextDate(date);
+  return S.data.times.flatMap((t, i) => {
+    const h = +t.slice(11, 13);
+    return (t.startsWith(date) && h >= WINDOW[0]) || (t.startsWith(nd) && h <= WINDOW[1]) ? [i] : [];
+  });
+};
+// Hora del pico; si cae de madrugada del día siguiente, lo aclara.
+const hourTxt = (i, date) => { const t = S.data.times[i]; if (!t) return '–'; const h = +t.slice(11, 13); return t.startsWith(date) ? `${h} h` : `${h} h (madrugada)`; };
 function pick(series, date) {
   if (!S.max) { const i = idxAt(date, S.hour); return { v: series[i] ?? 0, i }; }
   let v = -1, i = -1;
@@ -111,7 +120,7 @@ function townsRanked() {
   const date = curDate();
   return S.data.towns.map((t) => {
     const { v, i } = pick(t.score, date);
-    return { t, score: v, i, hour: +S.data.times[i]?.slice(11, 13), cape: t.cape[i], cin: t.cin[i], li: t.li[i], td: t.td[i], shear: t.shear[i], ll: t.ll[i], pr: t.pr[i], dist: Math.round(km(S.origin, t)) };
+    return { t, score: v, i, hour: hourTxt(i, date), cape: t.cape[i], cin: t.cin[i], li: t.li[i], td: t.td[i], lcl: t.lcl?.[i], shear: t.shear[i], ll: t.ll[i], srh: t.srh?.[i], pr: t.pr[i], dist: Math.round(km(S.origin, t)) };
   }).sort((a, b) => b.score - a.score || a.dist - b.dist);
 }
 
@@ -140,7 +149,7 @@ function renderTowns(rank) {
   for (const r of rank) {
     const lv = level(r.score);
     L.circleMarker([r.t.lat, r.t.lon], { radius: 4 + r.score / 14, color: '#0a0f1c', weight: 1.5, fillColor: lv.color, fillOpacity: 0.95 })
-      .bindTooltip(`<b>${esc(r.t.name)}</b> · ${r.score} ${lv.label}<br>CAPE ${r.cape} · cizalla ${r.shear}/${r.ll} m/s · ${r.hour} h`)
+      .bindTooltip(`<b>${esc(r.t.name)}</b> · ${r.score} ${lv.label}<br>CAPE ${r.cape} · cizalla ${r.shear ?? '–'}/${r.ll ?? '–'} m/s · SRH ${r.srh ?? '–'} · ${r.hour}`)
       .on('click', () => focusTown(r)).addTo(townLayer);
   }
 }
@@ -149,7 +158,9 @@ const MET = [
   // etiqueta, clave, unidad, umbral alto, umbral medio, menor es mejor, palabras
   ['CAPE', 'cape', 'J/kg', 2500, 1000, false, ['alto', 'ok', 'bajo']],
   ['Cizalla 0–6 km', 'shear', 'm/s', 20, 12.5, false, ['fuerte', 'ok', 'débil']],
-  ['Cizalla 0–1,5 km', 'll', 'm/s', 10, 7, false, ['fuerte', 'ok', 'débil']],
+  ['Cizalla 0–1 km', 'll', 'm/s', 10, 7, false, ['fuerte', 'ok', 'débil']],
+  ['Helicidad 0–1 km', 'srh', 'm²/s²', -150, -75, true, ['ciclónica', 'algo', 'débil']],
+  ['Base de nube (LCL)', 'lcl', 'm', 1000, 1500, true, ['baja', 'media', 'alta']],
   ['Punto de rocío', 'td', '°C', 18, 14, false, ['húmedo', 'ok', 'seco']],
   ['CIN (tapa)', 'cin', 'J/kg', 25, 100, true, ['abierta', 'media', 'fuerte']],
   ['Lifted Index', 'li', '', -6, -3, true, ['muy inestable', 'inestable', 'estable']],
@@ -157,8 +168,9 @@ const MET = [
 function metricsHtml(r) {
   return MET.map(([lbl, k, u, hi, mid, inv, w]) => {
     const v = r[k];
+    if (v == null) return `<div class="m"><span>${lbl}</span><b>–</b> ${u}<em>sin dato</em></div>`;
     const c = inv ? (v <= hi ? 0 : v <= mid ? 1 : 2) : v >= hi ? 0 : v >= mid ? 1 : 2;
-    return `<div class="m ${['good', 'mid', 'low'][c]}"><span>${lbl}</span><b>${v ?? '–'}</b> ${u}<em>${w[c]}</em></div>`;
+    return `<div class="m ${['good', 'mid', 'low'][c]}"><span>${lbl}</span><b>${v}</b> ${u}<em>${w[c]}</em></div>`;
   }).join('');
 }
 const dirLink = (lat, lon) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
@@ -174,7 +186,7 @@ function renderHero(rank) {
   const near = core && S.data.towns.reduce((a, t) => (km(core, t) < km(core, a) ? t : a));
   const coreTxt = core && core.v >= b.score + 8 && core.v >= 30
     ? `<p class="sub">Máximo de la grilla: <b>${core.v}</b> cerca de ${esc(near.name)} (${Math.round(km(near, core))} km). <a href="${dirLink(core.lat, core.lon)}" target="_blank" rel="noopener">Ruta</a></p>` : '';
-  const when = S.max ? `pico a las ${b.hour} h` : `a las ${S.hour} h`;
+  const when = S.max ? `pico a las ${b.hour}` : `a las ${S.hour} h`;
   $('#hero').innerHTML = `
     <div class="gauge" style="--v:${b.score};--c:${lv.color}"><span>${b.score}<small>${lv.label}</small></span></div>
     <div>
@@ -188,10 +200,12 @@ function renderHero(rank) {
     <div class="metrics">${metricsHtml(b)}</div>
     <details class="how"><summary>¿Cómo se calcula el puntaje?</summary><ul>
       <li><b>Energía × viento:</b> se multiplican. Sin CAPE no hay tormenta por más viento que haya; sin cizalladura la tormenta no se organiza ni rota.</li>
-      <li><b>Cizalladura 0–6 km</b> (≥20 m/s ideal) organiza supercélulas; la <b>0–1,5 km</b> (≥10 m/s) es la que más se asocia a tornados.</li>
-      <li>Suman: Lifted Index muy negativo, rocío ≥18 °C y que el modelo genere lluvia (la tormenta efectivamente se dispara).</li>
-      <li>Restan: aire seco (rocío &lt;14 °C) y “tapa” fuerte (CIN &gt;100), que puede impedir que se formen.</li>
-      <li>Se toma la mejor hora entre las 11 y las 22 h. Es un pronóstico de ingredientes, no un aviso de tornado.</li>
+      <li><b>Cizalladura 0–6 km</b> (≥20 m/s ideal) organiza supercélulas. Con menos de 15 m/s el puntaje no pasa de Moderado, y con menos de 10 m/s no pasa de Bajo, por más CAPE que haya.</li>
+      <li><b>Helicidad 0–1 km</b> (≤ −150 m²/s² ideal) y <b>cizalladura 0–1 km</b> (≥10 m/s): el giro del viento cerca del suelo, lo que más se asocia a tornados. En el hemisferio sur la supercélula peligrosa es la que se desvía a la izquierda, por eso la helicidad útil es <b>negativa</b>.</li>
+      <li><b>Base de nube (LCL)</b>: por debajo de 1000 m es ideal; por encima de 2000 m la tormenta puede rotar pero el tornado casi nunca llega al suelo.</li>
+      <li>Suman: Lifted Index muy negativo, rocío ≥18 °C, que el modelo genere lluvia, y días de mucha cizalla con poco CAPE y base baja (típicos de otoño/invierno).</li>
+      <li>Restan: aire muy seco y “tapa” fuerte (CIN &gt;100). Las zonas altas de las sierras (&gt;1200 m) no se puntúan: ahí el viento del modelo no es confiable.</li>
+      <li>Se toma la mejor hora entre las 11 h y las 2 h del día siguiente. Es un pronóstico de ingredientes, no un aviso de tornado.</li>
     </ul></details>`;
 }
 
@@ -206,13 +220,13 @@ function spark(t) {
     <polyline points="${line}" fill="none" stroke="${level(Math.max(...pts.map((p) => p[1]))).color}" stroke-width="2" vector-effect="non-scaling-stroke"/>${mark}</svg>`;
 }
 function renderList(rank) {
-  $('#rankinfo').textContent = `${S.max ? 'Máximo entre las 11 y las 22 h' : `A las ${S.hour} h`} · distancias desde ${S.origin.label}`;
+  $('#rankinfo').textContent = `${S.max ? 'Máximo entre las 11 h y las 2 h' : `A las ${S.hour} h`} · distancias desde ${S.origin.label}`;
   const shown = S.all ? rank : rank.slice(0, 10);
   $('#list').innerHTML = shown.map((r, k) => {
     const lv = level(r.score);
     return `<li class="row" data-k="${k}">
       <span class="sc" style="background:${lv.color}">${r.score}</span>
-      <span><span class="nm">${esc(r.t.name)}</span> <small>${r.dist} km · ~${driveHours(r.dist).toFixed(1)} h · ${S.max ? 'pico ' : ''}${r.hour} h · CAPE ${r.cape} · cizalla ${r.shear}/${r.ll}</small></span>
+      <span><span class="nm">${esc(r.t.name)}</span> <small>${r.dist} km · ~${driveHours(r.dist).toFixed(1)} h · ${S.max ? 'pico ' : ''}${r.hour} · CAPE ${r.cape} · cizalla ${r.shear ?? '–'}/${r.ll ?? '–'} · base ${r.lcl ?? '–'} m</small></span>
       <a class="go" href="${dirLink(r.t.lat, r.t.lon)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Ir</a>
       ${spark(r.t)}
     </li>`;
