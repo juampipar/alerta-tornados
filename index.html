@@ -45,6 +45,7 @@
       <div class="chips" id="layers">
         <button data-l="zonas" class="chip on">Potencial</button>
         <button data-l="smn" class="chip on">Avisos SMN</button>
+        <button data-l="lluvia" class="chip" title="Lluvia pronosticada por el modelo del SMN (4 km): como un radar del futuro">Lluvia SMN</button>
         <button data-l="radar" class="chip" title="RainViewer: casi sin cobertura en el centro de Argentina">Radar RV</button>
         <button data-l="sat" class="chip">Satélite</button>
         <button data-l="ir" class="chip">Infrarrojo</button>
@@ -54,6 +55,10 @@
       <div id="map"></div>
       <div class="radarstamp" id="radarstamp"></div>
       <div class="safeinfo" id="safeinfo"></div>
+      <div class="rainlegend" id="rainlegend" hidden>
+        <span id="raintxt">Lluvia pronosticada · modelo SMN</span>
+        <span class="rl"><i style="background:rgb(120,200,255)"></i>débil<i style="background:rgb(60,210,90)"></i><i style="background:rgb(250,220,40)"></i>fuerte<i style="background:rgb(240,40,60)"></i><i style="background:rgb(200,60,230)"></i>muy fuerte</span>
+      </div>
       <div class="legend" id="legend">
         <span>Potencial</span><i class="grad"></i><span class="lbls"><b>bajo</b><b>mod.</b><b>alto</b></span>
       </div>

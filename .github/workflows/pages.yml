@@ -24,6 +24,18 @@ jobs:
       - run: node scripts/build-data.mjs _site
         env:
           REUSE_FORECAST: ${{ github.event.schedule == '7,27,37,47,57 * * * *' && 'https://juampipar.github.io/alerta-tornados/data/forecast.json' || '' }}
+      # Lluvia pronosticada del modelo WRF del SMN (4 km). Solo se recalcula cuando sale una corrida nueva.
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: pip, cache-dependency-path: scripts/requirements.txt }
+      - name: Lluvia del modelo SMN
+        continue-on-error: true # si falla, el panel se publica igual (sin esa capa)
+        timeout-minutes: 15
+        run: |
+          pip install -q -r scripts/requirements.txt
+          python scripts/build-wrf.py _site
+        env:
+          PUBLISHED_WRF: https://juampipar.github.io/alerta-tornados/data/wrf/
+          REUSE_ONLY: ${{ github.event.schedule == '7,27,37,47,57 * * * *' && '1' || '' }}
       # Alertas Telegram: el estado (qué ya se envió) se guarda en la caché de Actions entre corridas.
       - uses: actions/cache/restore@v4
         with: { path: .alert-state, key: 'alert-state-${{ github.run_id }}', restore-keys: alert-state- }

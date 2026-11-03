@@ -13,7 +13,7 @@ const WINDOW = [11, 2]; // de 11 h a 2 h del día siguiente: en el Pasillo mucha
 const S = {
   data: null, smn: null, all: false, day: 0, hour: Math.min(22, Math.max(11, nowArt().hour)), max: true,
   origin: { ...HOME, label: 'Leones' },
-  layers: { zonas: true, smn: true, radar: false, sat: false, ir: false }, // RainViewer casi no cubre el centro de Argentina: apagado de entrada
+  layers: { zonas: true, smn: true, lluvia: false, radar: false, sat: false, ir: false }, // RainViewer casi no cubre el centro de Argentina: apagado de entrada
 };
 
 /* ---------------- Mapa ---------------- */
@@ -185,7 +185,8 @@ async function loadRadar() {
 $$('#layers .chip').forEach((b) => (b.onclick = () => {
   const k = b.dataset.l, on = !S.layers[k];
   S.layers[k] = on; b.classList.toggle('on', on);
-  if (k === 'zonas') { on ? gridLayer.addTo(map) : gridLayer.remove(); $('#legend').hidden = !on; }
+  if (k === 'zonas') { on ? gridLayer.addTo(map) : gridLayer.remove(); $('#legend').hidden = !on; renderZones(); }
+  if (k === 'lluvia') renderWrf();
   if (k === 'smn') on ? smnLayer.addTo(map) : smnLayer.remove();
   if (k === 'radar') { frames.forEach((f) => (on ? f.addTo(map) : f.remove())); if (!on) stamp(''); }
   if (k === 'sat' || k === 'ir') setSat(k, on);
@@ -365,7 +366,7 @@ function renderTimebar() {
 function render() {
   if (!S.data) return;
   const rank = townsRanked();
-  renderGrid(); renderTowns(rank); renderHero(rank); renderPlan(); renderList(rank); renderTimebar(); renderSafety();
+  renderGrid(); renderTowns(rank); renderHero(rank); renderPlan(); renderList(rank); renderTimebar(); renderSafety(); renderZones(); renderWrf();
 }
 
 /* ---------------- Plan de caza ---------------- */
@@ -614,7 +615,63 @@ $$('#origin button').forEach((b) => (b.onclick = () => {
     { enableHighAccuracy: true, maximumAge: 30000 });
 }));
 
-loadForecast(); loadSmn(); loadRadar();
+
+/* ---------------- Lluvia pronosticada (modelo WRF del SMN, 4 km) ---------------- */
+// Imágenes tipo radar por hora generadas en GitHub Actions (scripts/build-wrf.py).
+let wrf = null, wrfOverlay = null;
+async function loadWrf() {
+  try { wrf = await getJson('data/wrf/meta.json'); } catch { wrf = null; }
+  renderWrf();
+}
+function renderWrf() {
+  const leg = $('#rainlegend');
+  if (!S.layers.lluvia || !S.data) { wrfOverlay?.remove(); leg.hidden = true; return; }
+  leg.hidden = false;
+  if (!wrf) { wrfOverlay?.remove(); $('#raintxt').textContent = 'Lluvia SMN: todavía no hay datos del modelo'; return; }
+  const date = curDate(), key = `${date}T${pad(S.hour)}`;
+  const file = S.max ? wrf.max?.[date] : wrf.hours.includes(key) ? `${key}.png` : null;
+  const run = `${wrf.run.slice(11, 13)} UTC del ${+wrf.run.slice(8, 10)}/${+wrf.run.slice(5, 7)}`;
+  if (!file) { wrfOverlay?.remove(); $('#raintxt').textContent = `Lluvia SMN: sin pronóstico para ${S.max ? 'este día' : `las ${S.hour} h`}`; return; }
+  const url = `data/wrf/${file}?r=${encodeURIComponent(wrf.run)}`;
+  if (!wrfOverlay) wrfOverlay = L.imageOverlay(url, wrf.bounds, { pane: 'radar', opacity: 0.8, interactive: false });
+  else wrfOverlay.setUrl(url);
+  wrfOverlay.addTo(map);
+  $('#raintxt').innerHTML = `<b>Lluvia pronosticada</b> ${S.max ? '(lo más fuerte del día)' : `a las ${S.hour} h`} · modelo SMN, corrida ${run}`;
+}
+
+/* ---------------- Zonas de caza ---------------- */
+// Círculo alrededor de la zona con más potencial (y una segunda si está lejos de la primera).
+const zoneLayer = L.layerGroup().addTo(map);
+function huntZones() {
+  const date = curDate();
+  const cells = S.data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: pick(S.data.grid.score[k], date).v }))
+    .filter((c) => c.v >= 45).sort((a, b) => b.v - a.v);
+  const zones = [];
+  for (const c of cells) {
+    if (zones.length >= 2) break;
+    if (zones.some((z) => km(z.peak, c) < 160)) continue;
+    const mem = cells.filter((x) => x.v >= Math.max(45, c.v - 10) && km(c, x) <= 120);
+    const w = mem.reduce((s, x) => s + x.v, 0);
+    const ctr = { lat: mem.reduce((s, x) => s + x.lat * x.v, 0) / w, lon: mem.reduce((s, x) => s + x.lon * x.v, 0) / w };
+    const r = Math.min(100, Math.max(35, Math.max(...mem.map((x) => km(ctr, x))) + 35));
+    const town = S.data.towns.reduce((a, b) => (km(ctr, b) < km(ctr, a) ? b : a));
+    zones.push({ peak: c, ctr, r, v: c.v, town });
+  }
+  return zones;
+}
+function renderZones() {
+  zoneLayer.clearLayers();
+  if (!S.layers.zonas) return;
+  huntZones().forEach((z, n) => {
+    const lv = level(z.v);
+    const tip = `<b>Zona ${esc(z.town.name)}</b> · potencial ${z.v} (${lv.label.toLowerCase()})<br>Según el pronóstico, adentro de este círculo (~${Math.round(z.r)} km) es donde más chances hay de supercélulas con rotación. El lugar exacto lo define la tormenta el mismo día.`;
+    L.circle([z.ctr.lat, z.ctr.lon], { pane: 'smn', radius: z.r * 1000, color: lv.color, weight: n ? 2 : 3, dashArray: '10 7', fillColor: lv.color, fillOpacity: 0.06 })
+      .bindTooltip(tip, { sticky: true }).addTo(zoneLayer);
+    L.marker([z.ctr.lat + z.r / 111.2, z.ctr.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'zonelabel', html: `<span style="--c:${lv.color}">Zona ${esc(z.town.name)} · ${z.v}</span>`, iconSize: null }) }).addTo(zoneLayer);
+  });
+}
+
+loadForecast(); loadSmn(); loadRadar(); loadWrf();
 
 // Pestaña Windy: CAPE o radar (Windy tiene acceso a los radares del SMN).
 $$('#windysw button').forEach((b) => (b.onclick = () => {
@@ -625,4 +682,4 @@ $$('#windysw button').forEach((b) => (b.onclick = () => {
 }));
 setInterval(loadRadar, 5 * 60e3);
 setInterval(() => { loadSmn(); }, 10 * 60e3);
-setInterval(() => { loadForecast(); }, 60 * 60e3);
+setInterval(() => { loadForecast(); loadWrf(); }, 60 * 60e3);
