@@ -263,3 +263,13 @@ footer p { margin: 4px 0; }
 .opt .ohead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .opt .sc { color: #0a0f1c; font-weight: 800; border-radius: 8px; padding: 2px 8px; }
 .opt .owarn { color: #ffb3b3; } .opt .ook { color: #9be8c4; }
+
+#list .optrow { list-style: none; border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: var(--bg2); }
+#list .optrow.dim { opacity: .6; }
+#list .optrow p { margin: 4px 0; font-size: .85rem; }
+#list .optrow .ohead { display: flex; align-items: center; gap: 8px; }
+#list .optrow .sc { color: #0a0f1c; font-weight: 800; border-radius: 8px; padding: 2px 8px; }
+.owarn { color: #ffb3b3; } .ook { color: #9be8c4; }
+#list .townsbox { list-style: none; margin-top: 6px; }
+#list .townsbox summary { cursor: pointer; color: var(--mut); font-size: .85rem; padding: 6px 0; }
+#list ol.towns { padding: 0; margin: 0; }
