@@ -43,14 +43,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .layout {
   max-width: 1400px; margin: 0 auto; padding: 16px; display: grid; gap: 14px;
   grid-template-columns: minmax(0, 1fr) 400px;
-  grid-template-areas: "smn rank" "hero rank" "map rank" "guide guide";
+  grid-template-areas: "hero rank" "smn rank" "map rank" "guide guide";
   align-items: start;
 }
 .smn { grid-area: smn; } .hero { grid-area: hero; } .mapcard { grid-area: map; } .rank { grid-area: rank; position: sticky; top: 80px; max-height: calc(100vh - 96px); overflow: auto; }
 .guide { grid-area: guide; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .card { background: linear-gradient(180deg, #141d34, var(--card)); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; min-width: 0; }
 @media (max-width: 1000px) {
-  .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "smn" "hero" "map" "rank" "guide"; }
+  .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "smn" "map" "rank" "guide"; }
   .rank { position: static; max-height: none; }
 }
 
@@ -140,3 +140,15 @@ footer p { margin: 4px 0; }
 }
 [hidden] { display: none !important; }
 .more { width: 100%; margin-top: 8px; padding: 9px; }
+.seg .tablink { padding: 7px 12px; border-radius: 8px; color: var(--mut); font-weight: 600; font-size: .85rem; text-decoration: none; }
+.seg .tablink:hover { color: var(--tx); }
+.smn.hot { border-color: rgba(255, 59, 92, .6); box-shadow: 0 0 0 1px rgba(255, 59, 92, .25), 0 0 30px rgba(255, 59, 92, .12); }
+.al summary { cursor: pointer; list-style: none; color: var(--tx); }
+.al summary::-webkit-details-marker { display: none; }
+.al summary::after { content: "▾"; float: right; color: var(--mut); }
+.al[open] summary::after { content: "▴"; }
+.al .cnt { color: var(--mut); font-size: .8rem; margin-left: 4px; }
+.al p { font-size: .85rem; color: #c9d3e8; margin: 6px 0 0; }
+.how { grid-column: 1 / -1; font-size: .85rem; color: #c9d3e8; }
+.how summary { cursor: pointer; color: var(--ac); font-weight: 600; }
+.how ul { margin: 6px 0 0; padding-left: 18px; }

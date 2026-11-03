@@ -28,16 +28,16 @@
 </header>
 
 <main class="layout">
-  <section id="smn" class="card smn" aria-live="polite">Leyendo avisos del SMN…</section>
-
   <section id="hero" class="card hero">Cargando pronóstico…</section>
+
+  <section id="smn" class="card smn" aria-live="polite">Leyendo avisos del SMN…</section>
 
   <section class="card mapcard">
     <div class="maptop">
       <div class="seg" id="tabs">
         <button data-t="map" class="on">Mapa</button>
         <button data-t="windy">Windy</button>
-        <button data-t="rayos">Rayos</button>
+        <a class="tablink" href="https://www.lightningmaps.org/?lang=es#y=-33.3;x=-61.8;z=7" target="_blank" rel="noopener">Rayos ↗</a>
       </div>
       <div class="chips" id="layers">
         <button data-l="zonas" class="chip on">Potencial</button>
@@ -57,10 +57,6 @@
     <div id="tab-windy" class="pane" hidden>
       <iframe title="Windy: CAPE" loading="lazy"
         src="https://embed.windy.com/embed2.html?lat=-33.5&lon=-61.5&detailLat=-32.66&detailLon=-62.3&zoom=6&level=surface&overlay=cape&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C&radarRange=-1"></iframe>
-    </div>
-    <div id="tab-rayos" class="pane" hidden>
-      <iframe title="Rayos en vivo" loading="lazy" src="https://www.lightningmaps.org/?lang=es#m=oss;t=3;s=0;o=0;b=0.00;ts=0;y=-33.3;x=-61.8;z=7;d=2;dl=2;dc=0;"></iframe>
-      <p class="note">¿No carga? <a href="https://www.lightningmaps.org/?lang=es#y=-33.3;x=-61.8;z=7" target="_blank" rel="noopener">Abrir LightningMaps</a>.</p>
     </div>
     <div class="timebar" id="timebar">
       <button id="play" class="icon" aria-label="Reproducir">▶</button>
