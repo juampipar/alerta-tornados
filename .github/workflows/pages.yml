@@ -45,6 +45,8 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           MIN_SCORE: ${{ vars.MIN_SCORE || '60' }}
           RADIUS_KM: ${{ vars.RADIUS_KM || '200' }}
           ALERT_STATE: .alert-state/state.json
