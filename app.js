@@ -149,7 +149,7 @@ function renderTowns(rank) {
   for (const r of rank) {
     const lv = level(r.score);
     L.circleMarker([r.t.lat, r.t.lon], { radius: 4 + r.score / 14, color: '#0a0f1c', weight: 1.5, fillColor: lv.color, fillOpacity: 0.95 })
-      .bindTooltip(`<b>${esc(r.t.name)}</b> · ${r.score} ${lv.label}<br>CAPE ${r.cape} · cizalla ${r.shear ?? '–'}/${r.ll ?? '–'} m/s · SRH ${r.srh ?? '–'} · ${r.hour}`)
+      .bindTooltip(`<b>${esc(r.t.name)}</b> · ${r.score} ${lv.label}<br>CAPE ${fx('cape', r.cape)} · cizalla ${fx('shear', r.shear)}/${fx('ll', r.ll)} m/s · SRH ${fx('srh', r.srh)} · ${r.hour}`)
       .on('click', () => focusTown(r)).addTo(townLayer);
   }
 }
@@ -165,12 +165,25 @@ const MET = [
   ['CIN (tapa)', 'cin', 'J/kg', 25, 100, true, ['abierta', 'media', 'fuerte']],
   ['Lifted Index', 'li', '', -6, -3, true, ['muy inestable', 'inestable', 'estable']],
 ];
+// Los modelos no tienen la precisión de un decimal: se muestran valores redondeados.
+// (El puntaje y los colores usan el valor sin redondear.)
+const STEP = { cape: 100, shear: 1, ll: 1, srh: 10, lcl: 100, td: 1, cin: 10, li: 1 };
+const fx = (k, v) => { if (v == null) return '–'; const st = STEP[k] ?? 1, x = Math.round(v / st) * st; return String(Object.is(x, -0) ? 0 : x); };
+
+// Confianza del pronóstico según el día: cuanto más lejos, más se equivoca el modelo en dónde y cuándo.
+const CONF = [
+  { k: 'alta', txt: 'Confianza alta: el modelo suele ubicar bien la región, aunque la tormenta puede formarse 50–100 km más allá o con horas de diferencia.' },
+  { k: 'media', txt: 'Confianza media: sirve para saber si el día tiene potencial, pero la zona puede correrse bastante. Revisalo de nuevo mañana.' },
+  { k: 'baja', txt: 'Confianza baja: solo una tendencia. Es común que cambie por completo de un día para el otro.' },
+];
+const conf = (d) => CONF[Math.min(d, CONF.length - 1)];
+
 function metricsHtml(r) {
   return MET.map(([lbl, k, u, hi, mid, inv, w]) => {
     const v = r[k];
     if (v == null) return `<div class="m"><span>${lbl}</span><b>–</b> ${u}<em>sin dato</em></div>`;
     const c = inv ? (v <= hi ? 0 : v <= mid ? 1 : 2) : v >= hi ? 0 : v >= mid ? 1 : 2;
-    return `<div class="m ${['good', 'mid', 'low'][c]}"><span>${lbl}</span><b>${v}</b> ${u}<em>${w[c]}</em></div>`;
+    return `<div class="m ${['good', 'mid', 'low'][c]}"><span>${lbl}</span><b>${fx(k, v)}</b> ${u}<em>${w[c]}</em></div>`;
   }).join('');
 }
 const dirLink = (lat, lon) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
@@ -190,11 +203,12 @@ function renderHero(rank) {
   $('#hero').innerHTML = `
     <div class="gauge" style="--v:${b.score};--c:${lv.color}"><span>${b.score}<small>${lv.label}</small></span></div>
     <div>
-      <div class="kicker">Mejor zona · ${['hoy', 'mañana', 'pasado mañana'][S.day]}</div>
+      <div class="kicker">Mejor zona · ${['hoy', 'mañana', 'pasado mañana'][S.day]} <span class="conf conf-${conf(S.day).k}">Confianza ${conf(S.day).k}</span></div>
       <h2>${esc(b.t.name)}</h2>
       <p class="verdict">${verdict(b.score)}</p>
       <p class="sub">${b.dist} km desde ${esc(S.origin.label)} (~${driveHours(b.dist).toFixed(1)} h) · ${when}</p>
       ${coreTxt}
+      <p class="sub conftxt">${conf(S.day).txt}</p>
       <a class="go" href="${dirLink(b.t.lat, b.t.lon)}" target="_blank" rel="noopener">Cómo llegar →</a>
     </div>
     <div class="metrics">${metricsHtml(b)}</div>
@@ -206,6 +220,7 @@ function renderHero(rank) {
       <li>Suman: Lifted Index muy negativo, rocío ≥18 °C, que el modelo genere lluvia, y días de mucha cizalla con poco CAPE y base baja (típicos de otoño/invierno).</li>
       <li>Restan: aire muy seco y “tapa” fuerte (CIN &gt;100). Las zonas altas de las sierras (&gt;1200 m) no se puntúan: ahí el viento del modelo no es confiable.</li>
       <li>Se toma la mejor hora entre las 11 h y las 2 h del día siguiente. Es un pronóstico de ingredientes, no un aviso de tornado.</li>
+      <li>Los valores se muestran redondeados: el modelo no tiene la precisión de un decimal. Tomalos como orden de magnitud (“fuerte”, “bajo”), no como una medición.</li>
     </ul></details>`;
 }
 
@@ -226,7 +241,7 @@ function renderList(rank) {
     const lv = level(r.score);
     return `<li class="row" data-k="${k}">
       <span class="sc" style="background:${lv.color}">${r.score}</span>
-      <span><span class="nm">${esc(r.t.name)}</span> <small>${r.dist} km · ~${driveHours(r.dist).toFixed(1)} h · ${S.max ? 'pico ' : ''}${r.hour} · CAPE ${r.cape} · cizalla ${r.shear ?? '–'}/${r.ll ?? '–'} · base ${r.lcl ?? '–'} m</small></span>
+      <span><span class="nm">${esc(r.t.name)}</span> <small>${r.dist} km · ~${driveHours(r.dist).toFixed(1)} h · ${S.max ? 'pico ' : ''}${r.hour} · CAPE ${fx('cape', r.cape)} · cizalla ${fx('shear', r.shear)}/${fx('ll', r.ll)} · base ${fx('lcl', r.lcl)} m</small></span>
       <a class="go" href="${dirLink(r.t.lat, r.t.lon)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Ir</a>
       ${spark(r.t)}
     </li>`;
@@ -242,7 +257,7 @@ function focusTown(r) {
 
 function renderDays() {
   const labels = dates().map((d, i) => (i < 2 ? ['Hoy', 'Mañana'][i] : new Date(d + 'T12:00:00Z').toLocaleDateString('es-AR', { weekday: 'long', timeZone: 'UTC' })));
-  $('#days').innerHTML = labels.map((l, i) => `<button data-d="${i}" class="${i === S.day ? 'on' : ''}">${l[0].toUpperCase() + l.slice(1)}</button>`).join('');
+  $('#days').innerHTML = labels.map((l, i) => `<button data-d="${i}" class="${i === S.day ? 'on' : ''}" title="Confianza ${conf(i).k}">${l[0].toUpperCase() + l.slice(1)}<i class="cdot conf-${conf(i).k}" aria-hidden="true"></i></button>`).join('');
   $$('#days button').forEach((b) => (b.onclick = () => { S.day = +b.dataset.d; renderDays(); render(); }));
 }
 function renderTimebar() {
