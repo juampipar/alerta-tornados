@@ -111,9 +111,9 @@ function huntMessage(date, label, rank, prev) {
   const zone = !z ? [] : (() => {
     const dc = Math.round(km(HOME, z.ctr)), edge = Math.max(0, Math.round(dc - z.r));
     return [
-      `🎯 <b>Zona de caza: ${esc(z.town.name)}</b> (círculo de ~${Math.round(z.r)} km)`,
+      `🎯 <b>Zona de caza: ${esc(z.name)}</b> · máx ${z.v} (círculo de ~${Math.round(z.r)} km)`,
       edge === 0 ? '   <b>Leones está dentro de la zona</b>' : `   El borde está a ${edge} km de Leones, hacia el ${rumbo(bearing(HOME, z.ctr))}`,
-      ...(zs[1] ? [`   También: zona ${esc(zs[1].town.name)} (${zs[1].v})`] : []),
+      ...(zs[1] ? [`   Otra zona: ${esc(zs[1].name)} · máx ${zs[1].v}`] : []),
       `   <a href="${pin(z.ctr.lat, z.ctr.lon)}">Ver el centro de la zona</a>`,
       '',
     ];
@@ -123,7 +123,7 @@ function huntMessage(date, label, rank, prev) {
     `Potencial de tornado <b>${lv.label.toUpperCase()} · ${b.score}/100</b>${prev >= 0 ? ` <i>(subió de ${prev})</i>` : ''}`,
     '',
     ...zone,
-    `📍 <b>${esc(b.t.name)}</b> · pico a las ${clock(b.peakMin)} h`,
+    `📍 Mejor localidad: <b>${esc(b.t.name)} (${b.score})</b> · pico a las ${clock(b.peakMin)} h`,
     `🚗 ${b.dist} km, ~${dur(drive)} desde Leones`,
     !late ? `⏰ Salir a las <b>${clock(leaveMin)}</b> para llegar 1 h antes`
       : nowMin + drive * 60 <= b.peakMin + 60 ? `⏰ <b>Salí ya</b>: llegás a las ${clock(nowMin + drive * 60)} h, a tiempo para el pico`

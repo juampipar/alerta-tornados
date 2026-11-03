@@ -245,3 +245,9 @@ footer p { margin: 4px 0; }
 .rainlegend .rl i { display: inline-block; width: 16px; height: 8px; border-radius: 2px; }
 .zonelabel span { display: inline-block; transform: translate(-50%, -120%); white-space: nowrap; font-weight: 700; font-size: .78rem; color: #fff; background: rgba(10,15,28,.85); border: 1.5px solid var(--c); border-radius: 999px; padding: 2px 8px; }
 .zonelabel.below span { transform: translate(-50%, 20%); }
+
+.howlink { color: var(--tx); text-decoration: none; font-weight: 600; font-size: .85rem; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; white-space: nowrap; }
+.howlink:hover { border-color: #5fb4ff; }
+.howto { border-color: #5fb4ff55; }
+.howto h3 { margin-top: 14px; }
+#como-usar { scroll-margin-top: 90px; }

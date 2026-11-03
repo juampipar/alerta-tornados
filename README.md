@@ -6,7 +6,7 @@ Publicado en https://juampipar.github.io/alerta-tornados/
 
 ## Qué tiene
 - **Avisos oficiales del SMN** (formato CAP) filtrados al Pasillo, con los *avisos a muy corto plazo* destacados y marcados si incluyen tu zona. También se dibujan en el mapa.
-- **Mejor zona del día** con veredicto y métricas: CAPE, cizalladura 0–6 km y 0–1 km, helicidad 0–1 km (SRH), base de nube (LCL), punto de rocío, CIN y Lifted Index.
+- **Mejor localidad del día** con veredicto y métricas: CAPE, cizalladura 0–6 km y 0–1 km, helicidad 0–1 km (SRH), base de nube (LCL), punto de rocío, CIN y Lifted Index.
 - **Plan de caza** para novatos: si vale salir, destino, dónde parar (estación de servicio), a qué hora salir, hacia dónde y a qué velocidad van las tormentas, de qué lado ponerse, escape y hora de volver (puesta del sol). Si el pico es de noche, avisa que no hay que perseguir.
 - **Dibujo de la tormenta vista desde arriba**, girado según hacia dónde van ese día: dónde cae el granizo, dónde está la rotación, dónde pararse y por dónde escapar.
 - **Guía para la primera vez** (tres etapas, errores de novato) y **cómo leer el radar** (colores y formas: celda aislada, línea, gancho).
@@ -31,6 +31,12 @@ Energía y viento se **multiplican**: `70 · √(energía · viento)`, con energ
 - Se toma la mejor hora entre las **11 h y las 2 h del día siguiente**: en el Pasillo muchas tormentas severas son nocturnas, por el chorro de bajo nivel.
 
 Indica dónde hay ingredientes; **no predice tornados**.
+
+## Zonas de caza y lluvia del modelo SMN
+- **Zona de caza** (círculo en el mapa y en Telegram): el área con más potencial según la grilla. "Máx 75" es el punto más fuerte del círculo, que puede caer entre pueblos; la lista "Dónde ir" muestra el puntaje en cada pueblo. Si el centro está a más de 25 km del pueblo más cercano se nombra "al <rumbo> de <pueblo>".
+- **Lluvia SMN**: lluvia pronosticada por el modelo WRF del SMN (4 km), hora por hora, desde los datos abiertos en AWS (`scripts/build-wrf.py`).
+
+La guía de uso está en el panel, botón **❓ Cómo usar**.
 
 ## Alertas por Telegram
 Cada hora, el mismo workflow revisa los datos. Manda dos tipos de mensaje:
