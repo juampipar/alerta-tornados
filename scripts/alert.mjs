@@ -1,12 +1,13 @@
 // Alertas por Telegram. Corre en el workflow de cada hora, después de build-data.mjs.
 // Uso: node scripts/alert.mjs _site
 // Env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, MIN_SCORE (60), RADIUS_KM (200),
-//      ALERT_STATE (archivo donde recuerda lo ya enviado), TEST=1 (manda un resumen igual), DRY_RUN=1 (no envía).
+//      ALERT_STATE (archivo donde recuerda lo ya enviado), TEST=1 (manda el resumen igual), DRY_RUN=1 (no envía).
 //
-// Avisa:
-//  1. Aviso a corto plazo del SMN a menos de RADIUS_KM de Leones (a cualquier hora, una vez por aviso).
-//  2. Hoy o mañana con una zona ≥ MIN_SCORE (una vez por día; de nuevo si sube 10 puntos o más).
-//     Entre las 23 y las 7 h no manda avisos de pronóstico: los guarda para la mañana.
+// Dos mensajes:
+//  1. 🌪️ Día de caza: hoy o mañana alguna zona llega a MIN_SCORE (una vez por día; de nuevo si sube 10).
+//     Entre las 23 y las 7 h no se manda: queda para la mañana.
+//  2. 🚨 Ya se están formando: SOLO en un día de caza, si el SMN emite un aviso a corto plazo
+//     cerca de Leones o de las zonas marcadas. Los avisos del SMN de días comunes no se mandan.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { HOME, level, km, driveHours, rumbo } from '../lib/risk.mjs';
@@ -15,55 +16,38 @@ const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
 const MIN = +(env.MIN_SCORE || 60);
 const RADIUS = +(env.RADIUS_KM || 200);
+const NEAR_ZONE = 80; // km: aviso del SMN "cerca" de una zona marcada
 const STATE = env.ALERT_STATE || '.alert-state/state.json';
 const PANEL = 'https://juampipar.github.io/alerta-tornados/';
 const TZ = 'America/Argentina/Cordoba';
 
 const readJson = async (f) => { try { return JSON.parse(await readFile(f, 'utf8')); } catch { return null; } };
-const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const pad = (n) => String(n).padStart(2, '0');
 const maps = (lat, lon) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
 const hhmm = (iso) => new Date(iso).toLocaleTimeString('es-AR', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const clock = (min) => { const m = ((Math.round(min / 15) * 15) % 1440 + 1440) % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
+const dur = (h) => { const m = Math.round((h * 60) / 10) * 10; return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`; };
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+// "CORDOBA: JUAREZ CELMAN" -> "Cordoba: Juarez Celman" (el SMN escribe todo en mayúsculas)
+const title = (s) => String(s ?? '').toLowerCase().replace(/(^|[\s:(-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase())
+  .replace(/ (De|Del|La|Las|Los|Y|En|Por|Con) /g, (m) => m.toLowerCase());
 
 const now = new Date(Date.now() - 3 * 3600e3); // hora argentina (UTC−3, sin horario de verano)
 const today = now.toISOString().slice(0, 10);
-const hourNow = now.getUTCHours();
+const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
 const addDays = (d, n) => new Date(Date.parse(d + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+const dayName = (d) => `${new Date(d + 'T12:00:00Z').toLocaleDateString('es-AR', { weekday: 'short', timeZone: 'UTC' })} ${+d.slice(8)}/${+d.slice(5, 7)}`;
 
 const data = await readJson(`${dir}/forecast.json`);
 const smn = await readJson(`${dir}/smn.json`);
-const state = (await readJson(STATE)) || { smn: {}, days: {} };
+const state = (await readJson(STATE)) || {};
+state.smn ??= {}; state.days ??= {};
 const messages = [];
+const test = !!env.TEST;
+const quiet = nowMin >= 23 * 60 || nowMin < 7 * 60;
 
-/* ---------- 1. Avisos a corto plazo del SMN cerca de casa ---------- */
-function inPoly([lat, lon], poly) {
-  let ins = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [yi, xi] = poly[i], [yj, xj] = poly[j];
-    if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) ins = !ins;
-  }
-  return ins;
-}
-const nearest = (a) => Math.min(...a.areas.flatMap((ar) => ar.polygons.flat().map(([lat, lon]) => km(HOME, { lat, lon }))), Infinity);
-
-for (const a of smn?.alerts ?? []) {
-  if (!a.shortTerm || state.smn[a.id]) continue;
-  const mine = a.areas.some((ar) => ar.polygons.some((p) => inPoly([HOME.lat, HOME.lon], p)));
-  const d = Math.round(nearest(a));
-  if (!mine && d > RADIUS) continue;
-  state.smn[a.id] = a.expires || new Date().toISOString();
-  const zonas = [...new Set(a.areas.map((x) => x.desc).filter(Boolean))];
-  messages.push([
-    `🚨 <b>SMN: ${esc(a.event || a.headline)}</b>`,
-    mine ? '<b>Incluye Leones.</b>' : `A ${d} km de Leones.`,
-    zonas.length ? esc(zonas.slice(0, 8).join(' · ')) + (zonas.length > 8 ? ` +${zonas.length - 8}` : '') : '',
-    a.expires ? `Hasta las ${hhmm(a.expires)} h.` : '',
-    a.description ? esc(a.description.slice(0, 600)) : '',
-    `\nRadar y mapa: ${PANEL}`,
-  ].filter(Boolean).join('\n'));
-}
-
-/* ---------- 2. Pronóstico: hoy y mañana ---------- */
+/* ---------- Pronóstico ---------- */
 // Misma ventana que el panel: de 11 h a 2 h del día siguiente.
 function windowIdx(date) {
   const nd = addDays(date, 1);
@@ -73,46 +57,114 @@ function windowIdx(date) {
   });
 }
 function bestTowns(date) {
-  const idx = windowIdx(date);
+  // Para hoy, solo las horas que faltan (desde la hora actual).
+  const from = `${today}T${pad(Math.floor(nowMin / 60))}:00`;
+  const idx = windowIdx(date).filter((k) => date !== today || data.times[k] >= from);
   return data.towns.map((t) => {
     let i = -1, v = -1;
     for (const k of idx) if ((t.score[k] ?? 0) > v) { v = t.score[k]; i = k; }
-    return { t, i, score: Math.max(v, 0), dist: Math.round(km(HOME, t)) };
-  }).filter((r) => r.i >= 0).sort((a, b) => b.score - a.score);
-}
-function townLine(r) {
-  const s = (k) => r.t[k]?.[r.i];
-  const hora = data.times[r.i].slice(11, 16);
-  const srh = s('srh') == null ? '' : ` · helicidad ${Math.max(0, -s('srh'))}`;
-  const lcl = s('lcl') == null ? '' : ` · base ${s('lcl')} m`;
-  const mov = s('mdir') == null ? '' : `\n   Tormentas hacia el ${rumbo(s('mdir'))} a ${s('mspd')} km/h`;
-  return `<b>${r.score}</b> ${esc(r.t.name)} · pico ${hora} h · ${r.dist} km (~${driveHours(r.dist).toFixed(1)} h)\n` +
-    `   CAPE ${s('cape')} · cizalla ${s('shear') ?? '–'} m/s${srh}${lcl}${mov}\n` +
-    `   <a href="${maps(r.t.lat, r.t.lon)}">Cómo llegar</a>`;
+    if (i < 0) return null;
+    const s = (key) => t[key]?.[i];
+    const time = data.times[i];
+    const peakMin = (+time.slice(11, 13)) * 60 + (time.startsWith(date) ? 0 : 1440); // minutos desde las 0 h del día
+    return { t, i, s, score: Math.max(v, 0), dist: Math.round(km(HOME, t)), peakMin };
+  }).filter(Boolean).sort((a, b) => b.score - a.score || a.dist - b.dist);
 }
 
-const quiet = hourNow >= 23 || hourNow < 7;
-const test = !!env.TEST;
+// Palabras simples para cada ingrediente (✅ = favorable para tornado).
+const words = {
+  cape: (v) => (v >= 2500 ? 'muy alta ✅' : v >= 1500 ? 'alta ✅' : v >= 500 ? 'media' : 'baja'),
+  shear: (v) => (v >= 20 ? 'fuerte ✅' : v >= 12.5 ? 'moderada' : 'débil ❌'),
+  srh: (v) => (v >= 150 ? 'alto ✅' : v >= 75 ? 'moderado' : 'bajo'),
+  lcl: (v) => (v < 1000 ? 'baja ✅' : v < 1500 ? 'media' : 'alta (más granizo que tornado)'),
+};
+
+function huntMessage(date, label, rank, prev) {
+  const b = rank[0], lv = level(b.score), s = b.s;
+  const drive = driveHours(b.dist);
+  const leaveMin = b.peakMin - 60 - drive * 60; // llegar ~1 h antes del pico
+  const late = date === today && leaveMin <= nowMin;
+  const srh = s('srh') == null ? null : Math.max(0, -s('srh')); // helicidad ciclónica (hemisferio sur)
+  const ing = [
+    `⚡ Energía (CAPE ${s('cape')}): ${words.cape(s('cape'))}`,
+    s('shear') != null && `💨 Cizalladura (${Math.round(s('shear'))} m/s): ${words.shear(s('shear'))}`,
+    srh != null && `🌀 Giro cerca del suelo (helicidad ${srh}): ${words.srh(srh)}`,
+    s('lcl') != null && `☁️ Base de nube (${s('lcl')} m): ${words.lcl(s('lcl'))}`,
+  ].filter(Boolean);
+  const others = rank.slice(1, 4).filter((r) => r.score >= Math.max(25, MIN - 20))
+    .map((r) => `• ${esc(r.t.name)} <b>${r.score}</b> · ${clock(r.peakMin)} h · ${r.dist} km`);
+  const mov = s('mdir') == null ? null : `➡️ Las tormentas van hacia el <b>${rumbo(s('mdir'))}</b> a ${s('mspd')} km/h`;
+  return [
+    b.score >= MIN ? `🌪️ <b>DÍA DE CAZA · ${label}</b> <i>${dayName(date)}</i>` : `🧪 <b>Prueba · ${label}</b> <i>${dayName(date)}</i> · hoy no da para salir`,
+    `Potencial de tornado <b>${lv.label.toUpperCase()} · ${b.score}/100</b>${prev >= 0 ? ` <i>(subió de ${prev})</i>` : ''}`,
+    '',
+    `📍 <b>${esc(b.t.name)}</b> · pico a las ${clock(b.peakMin)} h`,
+    `🚗 ${b.dist} km, ~${dur(drive)} desde Leones`,
+    !late ? `⏰ Salir a las <b>${clock(leaveMin)}</b> para llegar 1 h antes`
+      : b.peakMin - drive * 60 > nowMin ? '⏰ <b>Salí ya</b> para llegar antes del pico'
+      : '⏰ No llegás antes del pico: seguí el radar y buscá lo más cercano',
+    mov,
+    '',
+    `<b>Ingredientes</b>`,
+    ...ing,
+    ...(others.length ? ['', '<b>Otras zonas</b>', ...others] : []),
+    '',
+    `<a href="${maps(b.t.lat, b.t.lon)}">🗺️ Ruta a ${esc(b.t.name)}</a>  ·  <a href="${PANEL}">📡 Radar y mapa</a>`,
+    `<i>Es potencial según el modelo, no un aviso de tornado.</i>`,
+  ].filter((x) => x !== false && x != null).join('\n');
+}
+
+const ranks = {};
 if (data) {
-  for (const [off, name] of [[0, 'HOY'], [1, 'MAÑANA']]) {
+  for (const [off, label] of [[0, 'HOY'], [1, 'MAÑANA']]) {
     const date = addDays(today, off);
-    const rank = bestTowns(date);
-    const top = rank[0];
-    if (!top) continue;
+    const rank = (ranks[date] = bestTowns(date));
+    const b = rank[0];
+    if (!b) continue;
     const prev = state.days[date] ?? -1;
-    const fire = top.score >= MIN && top.score >= prev + 10 && !quiet;
-    if (!fire && !test) continue;
-    if (fire) state.days[date] = top.score;
-    const lv = level(top.score);
-    const subio = prev >= 0 && fire ? ` (subió de ${prev})` : '';
-    messages.push([
-      `⛈️ <b>${name}: potencial ${lv.label.toUpperCase()} ${top.score}</b>${subio}`,
-      ...rank.slice(0, 3).filter((r) => r.score >= 25 || r === top).map(townLine),
-      `\nEs un pronóstico de ingredientes, no un aviso de tornado. Confirmá con radar y SMN.\n${PANEL}`,
-    ].join('\n'));
+    const fire = b.score >= MIN && b.score >= prev + 10 && !quiet;
+    if (fire) state.days[date] = b.score;
+    if (fire || (test && (off === 0 || b.score >= MIN))) messages.push(huntMessage(date, label, rank, fire ? prev : -1));
   }
-} else if (test) {
-  messages.push('⚠️ No se pudo leer el pronóstico en esta corrida.');
+}
+
+/* ---------- Confirmación en vivo: avisos a corto plazo del SMN en un día de caza ---------- */
+function inPoly([lat, lon], poly) {
+  let ins = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [yi, xi] = poly[i], [yj, xj] = poly[j];
+    if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) ins = !ins;
+  }
+  return ins;
+}
+const pts = (a) => a.areas.flatMap((ar) => ar.polygons.flat());
+const distTo = (a, p) => Math.min(Infinity, ...pts(a).map(([lat, lon]) => km(p, { lat, lon })));
+const covers = (a, p) => a.areas.some((ar) => ar.polygons.some((poly) => inPoly([p.lat, p.lon], poly)));
+
+const todayRank = ranks[today] ?? [];
+const huntDay = (todayRank[0]?.score ?? 0) >= MIN;
+const zones = todayRank.filter((r) => r.score >= MIN).slice(0, 5);
+const live = [];
+for (const a of smn?.alerts ?? []) {
+  if (!a.shortTerm || state.smn[a.id] || !huntDay) continue;
+  const home = covers(a, HOME), dHome = Math.round(distTo(a, HOME));
+  const zone = zones.map((z) => ({ z, d: covers(a, z.t) ? 0 : distTo(a, z.t) })).filter((x) => x.d <= NEAR_ZONE).sort((x, y) => x.d - y.d)[0]?.z;
+  if (!home && !zone && dHome > RADIUS) continue;
+  state.smn[a.id] = a.expires || new Date().toISOString();
+  const areas = [...new Set(a.areas.map((x) => title(x.desc).replace(/\.$/, '')).filter(Boolean))];
+  live.push(`• <b>${esc(cap((a.event || a.headline || 'Tormentas').toLowerCase()))}</b>: ${esc(areas.slice(0, 4).join(', '))}${areas.length > 4 ? ` +${areas.length - 4}` : ''}` +
+    `\n   ${home ? '📍 <b>incluye Leones</b>' : `a ${dHome} km de Leones`}${zone ? ` · cerca de ${esc(zone.t.name)}` : ''}${a.expires ? ` · hasta las ${hhmm(a.expires)}` : ''}`);
+}
+if (live.length) {
+  messages.push([
+    `🚨 <b>¡YA SE ESTÁN FORMANDO!</b>`,
+    `Hoy es día de caza (potencial ${todayRank[0].score}) y el SMN puso ${live.length === 1 ? 'un aviso' : `${live.length} avisos`} a corto plazo:`,
+    '',
+    ...live.slice(0, 6),
+    ...(live.length > 6 ? [`…y ${live.length - 6} más`] : []),
+    '',
+    `<a href="${PANEL}">📡 Mirá el radar antes de moverte</a>`,
+  ].join('\n'));
 }
 
 // Olvida avisos y días viejos.
@@ -121,7 +173,7 @@ for (const d of Object.keys(state.days)) if (d < addDays(today, -3)) delete stat
 await mkdir(dirname(STATE), { recursive: true });
 
 /* ---------- Envío ---------- */
-console.log(messages.length ? messages.join('\n\n———\n\n') : `Nada para avisar (umbral ${MIN}, radio ${RADIUS} km, ${pad(hourNow)} h).`);
+console.log(messages.length ? messages.join('\n\n———\n\n') : `Nada para avisar (umbral ${MIN}, ${clock(nowMin)} h).`);
 const { TELEGRAM_BOT_TOKEN: token, TELEGRAM_CHAT_ID: chat } = env;
 if (!messages.length || env.DRY_RUN) { await writeFile(STATE, JSON.stringify(state)); process.exit(0); }
 if (!token || !chat) {
