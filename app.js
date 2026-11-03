@@ -1,4 +1,4 @@
-import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint } from './lib/risk.mjs';
+import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 
 const $ = (s) => document.querySelector(s);
@@ -199,9 +199,11 @@ const idxAt = (date, h) => S.data.times.indexOf(`${date}T${pad(h)}:00`);
 const nextDate = (date) => new Date(Date.parse(date + 'T12:00:00Z') + 864e5).toISOString().slice(0, 10);
 const windowIdx = (date) => {
   const nd = nextDate(date);
+  // Hoy: solo las horas que faltan (desde la hora actual).
+  const now = nowArt(), from = date === now.date ? `${now.date}T${pad(now.hour)}:00` : '';
   return S.data.times.flatMap((t, i) => {
     const h = +t.slice(11, 13);
-    return (t.startsWith(date) && h >= WINDOW[0]) || (t.startsWith(nd) && h <= WINDOW[1]) ? [i] : [];
+    return ((t.startsWith(date) && h >= WINDOW[0]) || (t.startsWith(nd) && h <= WINDOW[1])) && t >= from ? [i] : [];
   });
 };
 // Hora del pico; si cae de madrugada del día siguiente, lo aclara.
@@ -329,7 +331,7 @@ function spark(t) {
     <polyline points="${line}" fill="none" stroke="${level(Math.max(...pts.map((p) => p[1]))).color}" stroke-width="2" vector-effect="non-scaling-stroke"/>${mark}</svg>`;
 }
 function renderList(rank) {
-  $('#rankinfo').textContent = `${S.max ? 'Máximo entre las 11 h y las 2 h' : `A las ${S.hour} h`} · distancias desde ${S.origin.label}`;
+  $('#rankinfo').textContent = `${S.max ? (S.day === 0 ? 'Máximo de lo que queda del día (hasta las 2 h)' : 'Máximo entre las 11 h y las 2 h') : `A las ${S.hour} h`} · distancias desde ${S.origin.label}`;
   const shown = S.all ? rank : rank.slice(0, 10);
   $('#list').innerHTML = shown.map((r, k) => {
     const lv = level(r.score);
@@ -364,7 +366,9 @@ function render() {
   if (!S.data) return;
   const rank = townsRanked();
   renderGrid(); S.zones = huntZones(); renderTowns(rank); renderHero(rank); renderPlan(); fillPlace();
-  if ($('#vpshow')) $('#vpshow').onclick = () => { showTab('map'); map.flyTo([S.vp.lat, S.vp.lon], 9); $('.mapcard').scrollIntoView({ behavior: 'smooth' }); }; renderList(rank); renderTimebar(); renderSafety(); renderZones(); renderWrf();
+  const fly = (p) => { showTab('map'); map.flyTo([p.lat, p.lon], 9); $('.mapcard').scrollIntoView({ behavior: 'smooth' }); };
+  if ($('#vpshow')) $('#vpshow').onclick = () => fly(S.vp);
+  $$('.optshow').forEach((b) => (b.onclick = () => fly(S.opts[+b.dataset.k].vp))); renderList(rank); renderTimebar(); renderSafety(); renderZones(); renderWrf();
 }
 
 /* ---------------- Plan de caza ---------------- */
@@ -384,26 +388,44 @@ function peakFor(t, date) {
 // Nombre del 👁 punto para mirar (pueblo/paraje y ruta), con caché.
 const placeCache = new Map();
 async function fillPlace() {
-  const vp = S.vp;
-  const els = $$('.vpname');
-  if (!vp || !els.length) return;
-  const key = `${vp.lat.toFixed(2)},${vp.lon.toFixed(2)}`;
-  if (!placeCache.has(key)) placeCache.set(key, placeName(vp));
-  const n = await placeCache.get(key);
-  if (n && S.vp === vp) els.forEach((e) => (e.textContent = `cerca de ${n.place}${n.road ? `, ${n.road}` : ''}`));
+  for (const e of $$('.vpname[data-ll]')) {
+    const key = e.dataset.ll, [lat, lon] = key.split(',').map(Number);
+    if (!placeCache.has(key)) placeCache.set(key, placeName({ lat, lon }));
+    placeCache.get(key).then((n) => { if (n && e.isConnected) e.textContent = `cerca de ${n.place}${n.road ? `, ${n.road}` : ''}`; });
+  }
 }
+const vpSpan = (vp) => `<span class="vpname" data-ll="${vp.lat.toFixed(2)},${vp.lon.toFixed(2)}">${vp.lat.toFixed(2)}, ${vp.lon.toFixed(2)}</span>`;
 // Zonas de caza con el máximo del día (de 11 a 2 h), sin importar el control de hora.
-function dayZones(date) {
+function dayZones(date, max = 2) {
   const idx = windowIdx(date);
-  const cells = S.data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: Math.max(0, ...idx.map((i) => S.data.grid.score[k][i] ?? 0)) }));
-  return findZones(cells, S.data.towns);
+  const cells = S.data.grid.pts.map(([lat, lon], k) => {
+    let v = 0, i = idx[0];
+    for (const j of idx) if ((S.data.grid.score[k][j] ?? 0) > v) { v = S.data.grid.score[k][j]; i = j; }
+    return { lat, lon, v, i };
+  });
+  return findZones(cells, S.data.towns, max);
+}
+// Tarjetas compactas con las otras zonas a las que se puede ir.
+function otherOptions(opts) {
+  if (!opts.length) return '';
+  const lv = (v) => level(v).color;
+  return `<h3 class="ptitle">Otras opciones para ir</h3><p class="muted">Si la principal no se arma o te queda lejos, probá alguna de estas. Cada una tiene su 👁 en el mapa.</p>
+    <div class="opts">${opts.map((o, k) => `
+      <div class="opt" style="--c:${lv(o.z.v)}">
+        <div class="ohead"><b>${k + 2}. Zona ${esc(o.z.name)}</b><span class="sc" style="background:${lv(o.z.v)}">${o.z.v}</span></div>
+        <p>👁 ${vpSpan(o.vp)} · pico <b>${hm(o.peakH)}</b></p>
+        <p>${o.dist} km desde ${esc(S.origin.label)} (~${o.drive.toFixed(1)} h) · salir a las <b>${hm(o.leave)}</b>${o.mspd != null ? ` · tormentas al ${rumbo(o.mdir)} a ${o.mspd} km/h` : ''}</p>
+        ${o.hit ? `<p class="owarn">⚠️ ${o.safe != null ? `Más tarde, el camino cruza el paso de las tormentas (~${hm(o.hit.h)})` : `El camino cruza el paso de las tormentas (~${hm(o.hit.h)}): entrá por el ${rumbo(o.mdir - 90)}`}</p>` : o.mspd != null ? '<p class="ook">✅ Con ese horario el camino no cruza por delante</p>' : ''}
+        <div class="pbtns"><a class="go" href="${mapsDir(S.origin, o.vp)}" target="_blank" rel="noopener">Ruta →</a> <button class="chip optshow" data-k="${k + 1}">Ver en el mapa</button></div>
+      </div>`).join('')}</div>`;
 }
 function renderPlan() {
   const el = $('#plan');
   const date = curDate();
   const peaks = S.data.towns.map((t) => peakFor(t, date)).filter(Boolean).sort((a, b) => b.v - a.v || km(S.origin, a.t) - km(S.origin, b.t));
   // El plan usa siempre el máximo del día: zona de caza del día y su pueblo de destino.
-  const dz = dayZones(date)[0];
+  const dzs = dayZones(date, 4), dz = dzs[0];
+  S.opts = huntOptions(dzs, S.data.towns, S.data.times, date, S.origin);
   const goT = dz && goTo(dz, peaks.map((x) => ({ ...x, score: x.v }))).t;
   const p = (goT && peaks.find((x) => x.t === goT)) || peaks[0];
   if (!p) { el.innerHTML = ''; return; }
@@ -438,7 +460,7 @@ function renderPlan() {
   const vleave = arrive - vdrive;
   const hit = vp && hasMove ? routeCheck(S.origin, vp, dz, mdir, mspd, vleave, p.h) : null;
   const safe = hit ? safeLeave(S.origin, vp, dz, mdir, mspd, vleave, p.h) : null;
-  const vpTxt = vp ? `el <b>👁 punto para mirar</b> (<span class="vpname">${vp.lat.toFixed(2)}, ${vp.lon.toFixed(2)}</span>)` : esc(t.name);
+  const vpTxt = vp ? `el <b>👁 punto para mirar</b> (${vpSpan(vp)})` : esc(t.name);
 
   let badge = 'Vale salir', cls = 'go';
   if (sc < 65) { badge = 'Si estás cerca'; cls = 'maybe'; }
@@ -494,7 +516,7 @@ function renderPlan() {
   rows.push(['Mirando', `Buscá la base oscura y baja, y si gira. Si en el radar se te acerca, movete hacia el <b>${side}</b>.`]);
   rows.push([hm(sunset), '<b>Se pone el sol: volvé</b>, aunque la tormenta siga.']);
 
-  el.innerHTML = head(badge, cls, `${dz ? `Zona ${esc(dz.name)} · potencial ${sc}<br><span class="sub">👁 Punto para mirar: <b class="vpname">${vp.lat.toFixed(2)}, ${vp.lon.toFixed(2)}</b> · pueblo de referencia ${esc(t.name)}</span>` : `ir hacia <b>${esc(t.name)}</b> · potencial ${sc}`}`) + warnHtml
+  el.innerHTML = head(badge, cls, `${dz ? `Zona ${esc(dz.name)} · potencial ${sc}<br><span class="sub">👁 Punto para mirar: <b>${vpSpan(vp)}</b> · pueblo de referencia ${esc(t.name)}</span>` : `ir hacia <b>${esc(t.name)}</b> · potencial ${sc}`}`) + warnHtml
     + `<h3 class="ptitle">Tu día, hora por hora</h3>`
     + `<table class="daytable"><tbody>${rows.map(([h, x]) => `<tr><td>${h}</td><td>${x}</td></tr>`).join('')}</tbody></table>`
     + (vp ? `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, vp)}" target="_blank" rel="noopener">Ruta al 👁 punto para mirar →</a> <button class="chip" id="vpshow">Ver en el mapa</button></div>
@@ -511,6 +533,7 @@ function renderPlan() {
           ${hasMove ? '' : '<li class="muted">Sin dato de movimiento: el dibujo usa la dirección típica.</li>'}
         </ul>
       </div>`
+    + otherOptions(S.opts.slice(1))
     + `<div class="pcols">
         <div><h3>Llevá</h3><ul><li>Tanque lleno y celular cargado (cargador en el auto)</li><li>Mapas de la zona descargados sin conexión</li><li>Agua, algo para comer y un acompañante</li></ul></div>
         <div><h3>Volvé si…</h3><ul><li>Empieza a caer granizo o no ves nada por la lluvia</li><li>El SMN emite aviso a muy corto plazo justo donde estás</li><li>Se hace de noche o la ruta se inunda</li></ul></div>
@@ -681,39 +704,26 @@ function renderWrf() {
 const zoneLayer = L.layerGroup().addTo(map);
 function huntZones() {
   const date = curDate();
-  const cells = S.data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: pick(S.data.grid.score[k], date).v }));
-  return findZones(cells, S.data.towns);
-}
-// Centro de la zona principal hora por hora (11 a 2 h) para ver hacia dónde se mueve.
-function zoneTrack(date) {
-  return windowIdx(date).map((i) => {
-    const cells = S.data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: S.data.grid.score[k][i] ?? 0 }));
-    const z = findZones(cells, S.data.towns)[0];
-    return z && { h: +S.data.times[i].slice(11, 13), ...z.ctr, v: z.v };
-  }).filter(Boolean);
+  const cells = S.data.grid.pts.map(([lat, lon], k) => { const { v, i } = pick(S.data.grid.score[k], date); return { lat, lon, v, i }; });
+  return findZones(cells, S.data.towns, 4);
 }
 function renderZones() {
   zoneLayer.clearLayers();
   if (!S.layers.zonas) return;
-  const tr = zoneTrack(curDate());
-  if (tr.length >= 2) {
-    L.polyline(tr.map((x) => [x.lat, x.lon]), { pane: 'smn', color: '#ffffff', weight: 2, opacity: 0.6, dashArray: '2 6', interactive: false }).addTo(zoneLayer);
-    tr.forEach((x, k) => {
-      if (k > 0 && km(x, tr[k - 1]) < 15) return; // no repetir etiquetas si la zona casi no se movió
-      L.marker([x.lat, x.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'tracklabel', html: `<span>${x.h} h</span>`, iconSize: null }) }).addTo(zoneLayer);
-    });
-  }
-  if (S.vp) {
-    L.marker([S.vp.lat, S.vp.lon], { pane: 'smn', icon: L.divIcon({ className: 'vpmark', html: '<span>👁</span>', iconSize: null }) })
-      .bindTooltip('<b>Punto para mirar</b><br>Al costado del camino de las tormentas: se ve la base y el granizo queda del otro lado. Es aproximado: buscá cerca un camino asfaltado con vista abierta.', { sticky: true }).addTo(zoneLayer);
-  }
+  const date = curDate();
   (S.zones ?? []).forEach((z, n) => {
     const lv = level(z.v);
-    const tip = `<b>Zona ${esc(z.name)}</b> · máximo ${z.v} (${lv.label.toLowerCase()})<br>Según el pronóstico, adentro de este círculo (~${Math.round(z.r)} km) es donde más chances hay de supercélulas con rotación. El lugar exacto lo define la tormenta el mismo día.<br><i>El ${z.v} es el punto más fuerte del círculo. Los pueblos de la lista tienen su propio puntaje, que puede ser menor si no están justo en ese punto.</i>`;
-    L.circle([z.ctr.lat, z.ctr.lon], { pane: 'smn', radius: z.r * 1000, color: lv.color, weight: n ? 2 : 3, dashArray: '10 7', fillColor: lv.color, fillOpacity: 0.06 })
+    const ts = S.data.times[z.peak.i] ?? '';
+    const ph = ts ? `pico ${+ts.slice(11, 13)} h` : '';
+    const tip = `<b>Zona ${esc(z.name)}</b> · máximo ${z.v} (${lv.label.toLowerCase()})${ph ? ` · ${ph}` : ''}<br>Según el pronóstico, adentro de este círculo (~${Math.round(z.r)} km) es donde más chances hay de supercélulas con rotación. El lugar exacto lo define la tormenta el mismo día.`;
+    L.circle([z.ctr.lat, z.ctr.lon], { pane: 'smn', radius: z.r * 1000, color: lv.color, weight: n ? 2 : 3, dashArray: '10 7', fillColor: lv.color, fillOpacity: n ? 0.03 : 0.06 })
       .bindTooltip(tip, { sticky: true }).addTo(zoneLayer);
-    // Etiqueta arriba del círculo; la de la segunda zona, abajo, para que no se pisen.
-    L.marker([z.ctr.lat + (n ? -1 : 1) * (z.r / 111.2), z.ctr.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'zonelabel' + (n ? ' below' : ''), html: `<span style="--c:${lv.color}">Zona ${esc(z.name)} · máx ${z.v}</span>`, iconSize: null }) }).addTo(zoneLayer);
+    L.marker([z.ctr.lat + (n % 2 ? -1 : 1) * (z.r / 111.2), z.ctr.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'zonelabel' + (n % 2 ? ' below' : ''), html: `<span style="--c:${lv.color}">${n + 1}. Zona ${esc(z.name)} · ${z.v}${ph ? ` · ${ph}` : ''}</span>`, iconSize: null }) }).addTo(zoneLayer);
+  });
+  // 👁 de cada opción del plan del día (siempre el máximo del día, como el plan).
+  (S.opts ?? []).forEach((o, k) => {
+    L.marker([o.vp.lat, o.vp.lon], { pane: 'smn', icon: L.divIcon({ className: 'vpmark', html: `<span>👁<b>${k + 1}</b></span>`, iconSize: null }) })
+      .bindTooltip(`<b>${k + 1}. Punto para mirar · zona ${esc(o.z.name)}</b><br>Pico ${hm(o.peakH)} · salir a las ${hm(o.leave)} · ${o.dist} km<br>Al costado del camino de las tormentas: se ve la base y el granizo queda del otro lado. Es aproximado: buscá cerca un camino asfaltado con vista abierta.`, { sticky: true }).addTo(zoneLayer);
   });
 }
 
