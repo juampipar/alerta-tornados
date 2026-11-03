@@ -2,3 +2,4 @@ _site/
 data/
 node_modules/
 .alert-state/
+__pycache__/
