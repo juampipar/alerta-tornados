@@ -43,14 +43,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .layout {
   max-width: 1400px; margin: 0 auto; padding: 16px; display: grid; gap: 14px;
   grid-template-columns: minmax(0, 1fr) 400px;
-  grid-template-areas: "hero rank" "smn rank" "map rank" "guide guide";
+  grid-template-areas: "hero rank" "smn rank" "map rank";
   align-items: start;
 }
 .smn { grid-area: smn; } .hero { grid-area: hero; } .mapcard { grid-area: map; } .rank { grid-area: rank; position: sticky; top: 80px; max-height: calc(100vh - 96px); overflow: auto; }
-.guide { grid-area: guide; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.guide { max-width: 1400px; margin: 0 auto; padding: 0 16px 16px; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .card { background: linear-gradient(180deg, #141d34, var(--card)); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; min-width: 0; }
 @media (max-width: 1000px) {
-  .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "smn" "map" "rank" "guide"; }
+  .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "smn" "map" "rank"; }
   .rank { position: static; max-height: none; }
 }
 
