@@ -3,67 +3,130 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1220">
+<meta name="theme-color" content="#0a0f1c">
+<meta name="description" content="Potencial de tormentas severas, avisos del SMN, radar y satélite en vivo para el Pasillo de los Tornados.">
 <title>Pasillo de Tornados</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <h1>⛈️ Pasillo de Tornados</h1>
-  <div class="days"><button data-d="0" class="on">Hoy</button><button data-d="1">Mañana</button></div>
+<header class="top">
+  <div class="brand">
+    <img src="icon.svg" alt="" width="36" height="36">
+    <div>
+      <h1>Pasillo de Tornados</h1>
+      <p>Córdoba · Santa Fe · Buenos Aires · Entre Ríos · La Pampa</p>
+    </div>
+  </div>
+  <div class="status" id="status"></div>
+  <div class="seg" id="days" role="tablist" aria-label="Día"></div>
 </header>
 
-<section id="best" class="card">Cargando pronóstico…</section>
+<main class="layout">
+  <section id="smn" class="card smn" aria-live="polite">Leyendo avisos del SMN…</section>
 
-<nav class="tabs">
-  <button data-t="map" class="on">Mapa en vivo</button>
-  <button data-t="windy">Windy</button>
-  <button data-t="rayos">Rayos</button>
-</nav>
+  <section id="hero" class="card hero">Cargando pronóstico…</section>
 
-<section id="tab-map">
-  <div class="layers">
-    <label><input type="checkbox" id="l-zonas" checked> Zonas</label>
-    <label><input type="checkbox" id="l-radar" checked> Radar</label>
-    <label><input type="checkbox" id="l-sat"> Satélite</label>
-    <label><input type="checkbox" id="l-ir"> Infrarrojo</label>
-    <span id="stamp"></span>
-  </div>
-  <div id="map"></div>
-</section>
-<section id="tab-windy" hidden>
-  <iframe title="Windy CAPE" loading="lazy"
-    src="https://embed.windy.com/embed2.html?lat=-33&lon=-62&detailLat=-32.66&detailLon=-62.3&zoom=6&level=surface&overlay=cape&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C&radarRange=-1"></iframe>
-</section>
-<section id="tab-rayos" hidden>
-  <iframe title="Rayos" loading="lazy" src="https://www.lightningmaps.org/?lang=es#m=oss;t=3;s=0;o=0;b=0.00;ts=0;y=-33;x=-62;z=7;d=2;dl=2;dc=0;"></iframe>
-  <p class="note">Si no carga acá, <a href="https://www.lightningmaps.org/?lang=es#y=-33;x=-62;z=7" target="_blank" rel="noopener">abrilo en otra pestaña</a>.</p>
-</section>
+  <section class="card mapcard">
+    <div class="maptop">
+      <div class="seg" id="tabs">
+        <button data-t="map" class="on">Mapa</button>
+        <button data-t="windy">Windy</button>
+        <button data-t="rayos">Rayos</button>
+      </div>
+      <div class="chips" id="layers">
+        <button data-l="zonas" class="chip on">Potencial</button>
+        <button data-l="smn" class="chip on">Avisos SMN</button>
+        <button data-l="radar" class="chip on">Radar</button>
+        <button data-l="sat" class="chip">Satélite</button>
+        <button data-l="ir" class="chip">Infrarrojo</button>
+      </div>
+    </div>
+    <div id="tab-map" class="pane">
+      <div id="map"></div>
+      <div class="radarstamp" id="radarstamp"></div>
+      <div class="legend" id="legend">
+        <span>Potencial</span><i class="grad"></i><span class="lbls"><b>bajo</b><b>mod.</b><b>alto</b></span>
+      </div>
+    </div>
+    <div id="tab-windy" class="pane" hidden>
+      <iframe title="Windy: CAPE" loading="lazy"
+        src="https://embed.windy.com/embed2.html?lat=-33.5&lon=-61.5&detailLat=-32.66&detailLon=-62.3&zoom=6&level=surface&overlay=cape&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C&radarRange=-1"></iframe>
+    </div>
+    <div id="tab-rayos" class="pane" hidden>
+      <iframe title="Rayos en vivo" loading="lazy" src="https://www.lightningmaps.org/?lang=es#m=oss;t=3;s=0;o=0;b=0.00;ts=0;y=-33.3;x=-61.8;z=7;d=2;dl=2;dc=0;"></iframe>
+      <p class="note">¿No carga? <a href="https://www.lightningmaps.org/?lang=es#y=-33.3;x=-61.8;z=7" target="_blank" rel="noopener">Abrir LightningMaps</a>.</p>
+    </div>
+    <div class="timebar" id="timebar">
+      <button id="play" class="icon" aria-label="Reproducir">▶</button>
+      <input id="hour" type="range" min="0" max="23" step="1" value="16" aria-label="Hora">
+      <output id="hourlbl">16 h</output>
+      <button id="maxbtn" class="chip on">Máx. del día</button>
+    </div>
+  </section>
 
-<section class="card">
-  <h2>Mejores zonas (de mayor a menor potencial)</h2>
-  <ol id="list"></ol>
-</section>
+  <aside class="card rank">
+    <div class="rankhead">
+      <h2>Dónde ir</h2>
+      <div class="seg small" id="origin">
+        <button data-o="home" class="on">Desde Leones</button>
+        <button data-o="gps">📍 Mi ubicación</button>
+      </div>
+    </div>
+    <p class="muted" id="rankinfo"></p>
+    <ol id="list"></ol>
+  </aside>
 
-<section class="card">
-  <h2>Confirmar en vivo</h2>
-  <div class="links">
-    <a target="_blank" rel="noopener" href="https://www.smn.gob.ar/alertas">Alertas SMN</a>
-    <a target="_blank" rel="noopener" href="https://www.smn.gob.ar/radar">Radares SMN</a>
-    <a target="_blank" rel="noopener" href="https://rammb-slider.cira.colostate.edu/?sat=goes-16&sec=full_disk&x=11000&y=14000&z=2&im=12&ts=1&st=0&et=0&speed=130&motion=loop&maps%5Bborders%5D=white&p%5B0%5D=geocolor&opacity%5B0%5D=1&pause=0&slider=-1&hide_controls=0&mouse_draw=0&follow_feature=0&follow_hide=0&s=rammb-slider&draw_color=FFD700&draw_cap=round&draw_width=6&fullscreen=0&su=0&cu=0&ts_gs=0&hs=0&ro=0&sl=0&ss=0&asr=0&kn=0&cd=0&lc=0">Satélite RAMMB</a>
-    <a target="_blank" rel="noopener" href="https://www.lightningmaps.org/?lang=es#y=-33;x=-62;z=7">Rayos</a>
-  </div>
-  <h2>Qué mirar en el lugar (hemisferio sur)</h2>
-  <ul class="tips">
-    <li>El aire cálido y húmedo entra del <b>norte/noreste</b>: la zona de la nube pared suele estar al <b>norte/noroeste</b> del núcleo de lluvia. Las rotaciones giran en sentido horario.</li>
-    <li>Mirá la base libre de lluvia: una bajada que rota sostenida es la señal clave.</li>
-    <li>Siempre una ruta de escape asfaltada hacia el este o sur. No entres al núcleo de lluvia/granizo.</li>
-    <li>Andá de a dos (uno maneja, otro mira radar). No salgas de noche.</li>
-  </ul>
-</section>
+  <section class="guide">
+    <article class="card">
+      <h2>Cómo usarlo</h2>
+      <ol class="steps">
+        <li><b>Mañana o el día antes:</b> mirá el potencial y las zonas en rojo/violeta. Movés el control de hora para ver cuándo pica.</li>
+        <li><b>Mediodía:</b> satélite. Buscá “coliflores” que crecen rápido y topes que sobresalen del yunque.</li>
+        <li><b>Con tormenta formada:</b> radar y rayos. Una celda aislada que explota en rayos se está intensificando.</li>
+        <li><b>Aviso SMN a muy corto plazo</b> = la tormenta ya es severa. Es lo más parecido a un aviso de tornado que hay en Argentina.</li>
+      </ol>
+    </article>
+    <article class="card">
+      <h2>Qué mirar en el lugar</h2>
+      <ul>
+        <li>En el hemisferio sur el aire cálido entra del <b>norte/noreste</b>: la nube pared suele estar al <b>norte/noroeste</b> del núcleo de lluvia.</li>
+        <li>Las rotaciones giran en sentido <b>horario</b>.</li>
+        <li>Una bajada de la base que rota sostenida es la señal clave. Polvo levantándose debajo = posible tornado.</li>
+        <li>Desplazamiento típico de las tormentas: hacia el este/sudeste. Ubicate adelante y al costado, nunca detrás del granizo.</li>
+      </ul>
+    </article>
+    <article class="card">
+      <h2>Seguridad</h2>
+      <ul>
+        <li>Siempre una salida asfaltada hacia el este o el sur (Ruta 9, Autopista, Ruta 8, 33, 5).</li>
+        <li>No entres al núcleo de lluvia/granizo: no se ve nada.</li>
+        <li>De a dos: uno maneja, el otro mira radar.</li>
+        <li>Nada de caminos de tierra con lluvia, ni salir de noche.</li>
+        <li>Nunca bajo un puente. Si te alcanza: zanja, boca abajo, cubrí la cabeza.</li>
+      </ul>
+    </article>
+    <article class="card links">
+      <h2>Fuentes oficiales y en vivo</h2>
+      <a target="_blank" rel="noopener" href="https://www.smn.gob.ar/alertas">Alertas SMN</a>
+      <a target="_blank" rel="noopener" href="https://www.smn.gob.ar/radar">Radares SMN</a>
+      <a target="_blank" rel="noopener" href="https://rammb-slider.cira.colostate.edu/?sat=goes-19&sec=full_disk&p%5B0%5D=geocolor&x=11000&y=14000&z=3&im=12&ts=1&motion=loop">Satélite RAMMB</a>
+      <a target="_blank" rel="noopener" href="https://www.windy.com/-33.000/-62.000?cape,-33.000,-62.000,7">Windy CAPE</a>
+      <a target="_blank" rel="noopener" href="https://www.lightningmaps.org/?lang=es#y=-33.3;x=-61.8;z=7">Rayos</a>
+      <a target="_blank" rel="noopener" href="https://www.rainviewer.com/map.html?loc=-33,-62,7">RainViewer</a>
+    </article>
+  </section>
+</main>
 
-<footer>Índice = heurística con CAPE, cizalladura 10 m–500 hPa y CIN (Open-Meteo). Es un indicador de potencial, no un aviso de tornado. Los avisos oficiales son del SMN.</footer>
+<footer>
+  <p><b>Potencial</b> = índice 0–100 que combina energía (CAPE), cizalladura profunda y baja, humedad, inestabilidad y “tapa” (CIN) del pronóstico de Open-Meteo. Indica dónde hay ingredientes, <b>no predice tornados</b>. Los avisos oficiales son del Servicio Meteorológico Nacional.</p>
+  <p>Radar: RainViewer · Satélite: NOAA GOES vía NASA GIBS · Mapa: Esri</p>
+</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script type="module" src="app.js"></script>
