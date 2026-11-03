@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Pasillo de Tornados</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>⛈️ Pasillo de Tornados</h1>
+  <div class="days"><button data-d="0" class="on">Hoy</button><button data-d="1">Mañana</button></div>
+</header>
+
+<section id="best" class="card">Cargando pronóstico…</section>
+
+<nav class="tabs">
+  <button data-t="map" class="on">Mapa en vivo</button>
+  <button data-t="windy">Windy</button>
+  <button data-t="rayos">Rayos</button>
+</nav>
+
+<section id="tab-map">
+  <div class="layers">
+    <label><input type="checkbox" id="l-zonas" checked> Zonas</label>
+    <label><input type="checkbox" id="l-radar" checked> Radar</label>
+    <label><input type="checkbox" id="l-sat"> Satélite</label>
+    <label><input type="checkbox" id="l-ir"> Infrarrojo</label>
+    <span id="stamp"></span>
+  </div>
+  <div id="map"></div>
+</section>
+<section id="tab-windy" hidden>
+  <iframe title="Windy CAPE" loading="lazy"
+    src="https://embed.windy.com/embed2.html?lat=-33&lon=-62&detailLat=-32.66&detailLon=-62.3&zoom=6&level=surface&overlay=cape&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C&radarRange=-1"></iframe>
+</section>
+<section id="tab-rayos" hidden>
+  <iframe title="Rayos" loading="lazy" src="https://www.lightningmaps.org/?lang=es#m=oss;t=3;s=0;o=0;b=0.00;ts=0;y=-33;x=-62;z=7;d=2;dl=2;dc=0;"></iframe>
+  <p class="note">Si no carga acá, <a href="https://www.lightningmaps.org/?lang=es#y=-33;x=-62;z=7" target="_blank" rel="noopener">abrilo en otra pestaña</a>.</p>
+</section>
+
+<section class="card">
+  <h2>Mejores zonas (de mayor a menor potencial)</h2>
+  <ol id="list"></ol>
+</section>
+
+<section class="card">
+  <h2>Confirmar en vivo</h2>
+  <div class="links">
+    <a target="_blank" rel="noopener" href="https://www.smn.gob.ar/alertas">Alertas SMN</a>
+    <a target="_blank" rel="noopener" href="https://www.smn.gob.ar/radar">Radares SMN</a>
+    <a target="_blank" rel="noopener" href="https://rammb-slider.cira.colostate.edu/?sat=goes-16&sec=full_disk&x=11000&y=14000&z=2&im=12&ts=1&st=0&et=0&speed=130&motion=loop&maps%5Bborders%5D=white&p%5B0%5D=geocolor&opacity%5B0%5D=1&pause=0&slider=-1&hide_controls=0&mouse_draw=0&follow_feature=0&follow_hide=0&s=rammb-slider&draw_color=FFD700&draw_cap=round&draw_width=6&fullscreen=0&su=0&cu=0&ts_gs=0&hs=0&ro=0&sl=0&ss=0&asr=0&kn=0&cd=0&lc=0">Satélite RAMMB</a>
+    <a target="_blank" rel="noopener" href="https://www.lightningmaps.org/?lang=es#y=-33;x=-62;z=7">Rayos</a>
+  </div>
+  <h2>Qué mirar en el lugar (hemisferio sur)</h2>
+  <ul class="tips">
+    <li>El aire cálido y húmedo entra del <b>norte/noreste</b>: la zona de la nube pared suele estar al <b>norte/noroeste</b> del núcleo de lluvia. Las rotaciones giran en sentido horario.</li>
+    <li>Mirá la base libre de lluvia: una bajada que rota sostenida es la señal clave.</li>
+    <li>Siempre una ruta de escape asfaltada hacia el este o sur. No entres al núcleo de lluvia/granizo.</li>
+    <li>Andá de a dos (uno maneja, otro mira radar). No salgas de noche.</li>
+  </ul>
+</section>
+
+<footer>Índice = heurística con CAPE, cizalladura 10 m–500 hPa y CIN (Open-Meteo). Es un indicador de potencial, no un aviso de tornado. Los avisos oficiales son del SMN.</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
