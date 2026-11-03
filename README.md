@@ -51,6 +51,8 @@ Cada hora, el mismo workflow revisa los datos. Manda dos tipos de mensaje:
 4. En GitHub: Settings → Secrets and variables → Actions → **New repository secret**: `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`.
 5. Probá: Actions → "Publicar panel" → Run workflow → tildá **prueba**. Te llega un resumen aunque no haya alerta.
 
+**🤖 Recomendación con IA (opcional, gratis):** cuando llega un "Día de caza" o un 🚨, Gemini lee `data/brief.json` (un resumen de todo el panel pensado para IA) y manda un mensaje corto "Qué haría yo", con reglas de seguridad fijas. Para activarla: en https://aistudio.google.com tocá **Get API key → Create API key**, copiala y cargala como secreto `GEMINI_API_KEY` (Settings → Secrets and variables → Actions). La capa gratuita alcanza; el modelo se puede cambiar con la variable `GEMINI_MODEL` (por defecto `gemini-flash-latest`). Sin la clave todo funciona igual, sin ese mensaje.
+
 Opcional, en la pestaña **Variables** de esa misma pantalla: `MIN_SCORE` (umbral, 60 por defecto) y `RADIUS_KM` (radio para avisos SMN, 200 por defecto). Para un grupo, agregá el bot al grupo y usá el id del grupo (empieza con `-`).
 
 Local: `DRY_RUN=1 node scripts/alert.mjs .` muestra lo que mandaría sin enviarlo.

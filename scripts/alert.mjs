@@ -10,7 +10,7 @@
 //     cerca de Leones o de las zonas marcadas. Los avisos del SMN de días comunes no se mandan.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, nearestStop, plainKey } from '../lib/risk.mjs';
+import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, nearestStop, plainKey, sunsetHour } from '../lib/risk.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -87,13 +87,20 @@ async function optionsFor(date) {
   if (!zs.length) return (optCache[date] = []);
   const nowH = date === today ? nowMin / 60 : null;
   const base = huntOptions(zs, data.towns, data.times, date, HOME, null, nowH);
-  const stops = new Map();
+  state.stops ??= {}; state.places ??= {};
   for (const o of base) {
+    const k = plainKey(o.base);
+    if (state.stops[k]) continue;
     await sleep(1100); // OpenStreetMap pide como máximo 1 consulta por segundo
-    stops.set(plainKey(o.base), await nearestStop(o.base, data.towns));
+    const st = await nearestStop(o.base, data.towns);
+    if (st) state.stops[k] = st;
   }
-  const opts = huntOptions(zs, data.towns, data.times, date, HOME, (bp) => stops.get(plainKey(bp)) || null, nowH);
-  for (const o of opts) { await sleep(1100); o.place = await placeName(o.vp); }
+  const opts = huntOptions(zs, data.towns, data.times, date, HOME, (bp) => state.stops[plainKey(bp)] || null, nowH);
+  for (const o of opts) {
+    const k = plainKey(o.vp);
+    if (!(k in state.places)) { await sleep(1100); state.places[k] = await placeName(o.vp); }
+    o.place = state.places[k];
+  }
   return (optCache[date] = opts);
 }
 const stopLine = (o) => `${o.stop?.kind === 'estación' ? '⛽ ' : ''}<b>${esc(o.stop?.label ?? 'punto aproximado')}</b>${o.place ? ` · cerca de ${esc(o.place.place)}${o.place.road ? ` (${esc(o.place.road)})` : ''}` : ''}`;
@@ -226,7 +233,86 @@ if (live.length) {
 // Olvida avisos y días viejos.
 for (const [id, exp] of Object.entries(state.smn)) if (Date.parse(exp) < Date.now() - 2 * 864e5) delete state.smn[id];
 for (const d of Object.keys(state.days)) if (d < addDays(today, -3)) delete state.days[d];
+for (const c of ['stops', 'places']) if (state[c] && Object.keys(state[c]).length > 300) state[c] = Object.fromEntries(Object.entries(state[c]).slice(-200));
 await mkdir(dirname(STATE), { recursive: true });
+
+
+/* ---------- Resumen para IA (data/brief.json) y recomendación 🤖 ---------- */
+const r0 = (x) => (x == null ? null : Math.round(x));
+async function buildBrief() {
+  const days = [];
+  for (const [off, label] of [[0, 'hoy'], [1, 'mañana']]) {
+    const date = addDays(today, off);
+    if (!data?.times?.some((t) => t.startsWith(date))) continue;
+    const opts = await optionsFor(date);
+    days.push({
+      dia: label, fecha: date,
+      opciones: opts.map((o, k) => ({
+        n: k + 1, zona: o.z.name, potencial: o.z.v, radio_km: r0(o.z.r), centro: { lat: +o.z.ctr.lat.toFixed(2), lon: +o.z.ctr.lon.toFixed(2) },
+        hora_pico: clock(o.peakH * 60),
+        parada: { nombre: o.stop?.label ?? null, tipo: o.stop?.kind ?? null, cerca_de: o.place?.place ?? null, ruta: o.place?.road ?? null, lat: +o.vp.lat.toFixed(3), lon: +o.vp.lon.toFixed(3) },
+        km_desde_leones: o.dist, horas_de_viaje: +o.drive.toFixed(1), salir: clock(o.leave * 60), es_tarde: o.late, llega_a_tiempo: o.reachable,
+        camino_cruza_tormentas: o.hit ? clock(o.hit.h * 60) : false,
+        tormentas_van_hacia: o.mspd != null ? rumbo(o.mdir) : null, velocidad_kmh: o.mspd,
+        ingredientes: (() => { const t = o.town, i = o.i; return { pueblo: t.name, cape: t.cape[i], cizalla_0_6km_ms: r0(t.shear[i]), cizalla_0_1km_ms: r0(t.ll[i]), helicidad_0_1km: t.srh?.[i] ?? null, base_nube_m: t.lcl?.[i] ?? null, rocio_c: t.td[i], cin: t.cin[i] }; })(),
+      })),
+    });
+  }
+  const acp = (smn?.alerts ?? []).filter((a) => a.shortTerm).map((a) => ({
+    evento: a.event || a.headline, zonas: [...new Set(a.areas.map((x) => title(x.desc).replace(/\.$/, '')))].slice(0, 6),
+    km_desde_leones: Math.round(distTo(a, HOME)), incluye_leones: covers(a, HOME), hasta: a.expires ? hhmm(a.expires) : null,
+  })).sort((x, y) => x.km_desde_leones - y.km_desde_leones).slice(0, 8);
+  return {
+    generado: new Date().toISOString(), hora_argentina: clock(nowMin), base: { nombre: 'Leones', lat: HOME.lat, lon: HOME.lon },
+    puesta_de_sol_aprox: clock(sunsetHour(HOME.lat, HOME.lon, today) * 60), umbral_dia_de_caza: MIN, dias: days, avisos_smn_corto_plazo: acp,
+    nota: 'Potencial 0–100 de supercélulas con rotación según modelos (no es un aviso de tornado). Radar de velocidad no disponible.',
+  };
+}
+
+const AI_RULES = `Sos un cazador de tormentas experto del Pasillo de los Tornados (Argentina, hemisferio sur) y le hablás a un aficionado
+que sale desde Leones (Córdoba). Con el resumen JSON que sigue, decile QUÉ HACER AHORA, en castellano rioplatense, simple y concreto.
+Reglas obligatorias:
+- Máximo 6 líneas cortas. Nada de introducciones. Empezá con la decisión: "Salí", "Esperá", "Quedate", "Movete" o "Hoy no salgas".
+- Usá solo los datos del JSON: nombrá la parada (estación/pueblo), la hora de salida y la ruta si están. No inventes lugares, rutas ni datos.
+- Si hay avisos a corto plazo del SMN cerca (< 80 km), priorizalos: decí dónde están y hacia dónde moverse para quedar de costado.
+- Seguridad: nunca recomiendes acercarse a menos de 15 km de una tormenta, ponerse delante de su camino, caminos de tierra,
+  ni salir o seguir de noche (después de la puesta del sol). Interceptar de costado (lado norte si van al este), nunca perseguir por detrás.
+- Si ninguna opción llega a tiempo o el potencial es < 45, decí que hoy no conviene.
+- No prometas tornados: hablá de "chances".`;
+
+async function aiAdvice(brief, focus) {
+  const key = env.GEMINI_API_KEY;
+  if (!key) return null;
+  const model = env.GEMINI_MODEL || 'gemini-flash-latest';
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 30000);
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, signal: ctl.signal,
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: `${AI_RULES}\n\nEnfocate en: ${focus}\n\nJSON:\n${JSON.stringify(brief)}` }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 400 },
+      }),
+    });
+    clearTimeout(timer);
+    if (!r.ok) { console.error('IA error', r.status, (await r.text()).slice(0, 300)); return null; }
+    const j = await r.json();
+    const txt = j.candidates?.[0]?.content?.parts?.map((p) => p.text).join('').trim();
+    return txt || null;
+  } catch (e) { console.error('IA falló:', e.message); return null; }
+}
+
+let brief = null;
+if (data) {
+  brief = await buildBrief();
+  await writeFile(`${dir}/brief.json`, JSON.stringify(brief, null, 1));
+}
+if (brief && messages.length) {
+  const focus = live.length ? 'hay avisos del SMN de tormentas formándose: qué hacer en las próximas 2 horas'
+    : 'el día de caza: a dónde ir, a qué hora salir y qué hacer al llegar';
+  const adv = await aiAdvice(brief, focus);
+  if (adv) messages.push(`🤖 <b>Qué haría yo</b> <i>(IA, con los datos de arriba)</i>\n${esc(adv).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^\s*[*-]\s+/gm, '• ')}\n<i>Es una sugerencia: manda el radar y tu criterio.</i>`);
+}
 
 /* ---------- Envío ---------- */
 console.log(messages.length ? messages.join('\n\n———\n\n') : `Nada para avisar (umbral ${MIN}, ${clock(nowMin)} h).`);
