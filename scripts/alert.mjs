@@ -130,7 +130,7 @@ function huntMessage(date, label, rank, prev) {
     '',
     ...zone,
     `📍 Ir hacia: <b>${esc(b.t.name)}</b> · pico a las ${clock(b.peakMin)} h`,
-    outside(z, b) && `   <i>(pueblo más cercano: la zona empieza ${outside(z, b)} km al ${rumbo(bearing(b.t, z.ctr))})</i>`,
+    outside(z, b) > 0 ? `   <i>(pueblo más cercano: la zona empieza ${outside(z, b)} km al ${rumbo(bearing(b.t, z.ctr))})</i>` : null,
     `🚗 ${b.dist} km, ~${dur(drive)} desde Leones`,
     !late ? `⏰ Salir a las <b>${clock(leaveMin)}</b> para llegar 1 h antes`
       : nowMin + drive * 60 <= b.peakMin + 60 ? `⏰ <b>Salí ya</b>: llegás a las ${clock(nowMin + drive * 60)} h, a tiempo para el pico`
