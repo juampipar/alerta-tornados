@@ -33,11 +33,10 @@ Energía y viento se **multiplican**: `70 · √(energía · viento)`, con energ
 Indica dónde hay ingredientes; **no predice tornados**.
 
 ## Alertas por Telegram
-Cada hora, el mismo workflow revisa los datos y te escribe si:
-- 🚨 el SMN emite un **aviso a corto plazo** que incluye Leones o está a menos de 200 km (a cualquier hora, una vez por aviso);
-- ⛈️ **hoy o mañana** alguna zona llega a **60** o más (una vez por día, y de nuevo si sube 10 puntos). Entre las 23 y las 7 h no manda avisos de pronóstico.
+Cada hora, el mismo workflow revisa los datos. Manda dos tipos de mensaje:
 
-El mensaje trae las 3 mejores zonas con hora pico, distancia, CAPE, cizalla, helicidad, base de nube, hacia dónde se mueven las tormentas y link a Google Maps.
+- 🌪️ **Día de caza**: hoy o mañana alguna zona llega a **60** o más. Trae la mejor zona, la hora pico, a qué hora salir desde Leones, hacia dónde van las tormentas, los ingredientes explicados (energía, cizalladura, giro cerca del suelo, base de nube), otras zonas y la ruta en Google Maps. Uno por día, y otro si sube 10 puntos. Entre las 23 y las 7 h no se manda.
+- 🚨 **¡Ya se están formando!**: solo en un día de caza, cuando el SMN emite un aviso a corto plazo cerca de Leones (200 km) o de las zonas marcadas (80 km). Es la confirmación de que lo que marcaba el pronóstico está pasando. Los avisos del SMN de días comunes **no** se mandan (son muchos y casi nunca son de tornado).
 
 **Configuración (una sola vez):**
 1. En Telegram, hablale a **@BotFather** → `/newbot` → elegí nombre. Te da un **token**.
