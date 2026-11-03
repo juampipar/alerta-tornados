@@ -10,7 +10,7 @@
 //     cerca de Leones o de las zonas marcadas. Los avisos del SMN de días comunes no se mandan.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { HOME, level, km, driveHours, rumbo } from '../lib/risk.mjs';
+import { HOME, level, km, driveHours, rumbo, huntZones } from '../lib/risk.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -24,6 +24,8 @@ const TZ = 'America/Argentina/Cordoba';
 const readJson = async (f) => { try { return JSON.parse(await readFile(f, 'utf8')); } catch { return null; } };
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const pad = (n) => String(n).padStart(2, '0');
+const bearing = (a, b) => (Math.atan2((b.lon - a.lon) * Math.cos((a.lat * Math.PI) / 180), b.lat - a.lat) * 180 / Math.PI + 360) % 360;
+const pin = (lat, lon) => `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(3)},${lon.toFixed(3)}`;
 const maps = (lat, lon) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
 const hhmm = (iso) => new Date(iso).toLocaleTimeString('es-AR', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const clock = (min) => { const m = ((Math.round(min / 15) * 15) % 1440 + 1440) % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
@@ -56,10 +58,20 @@ function windowIdx(date) {
     return (t.startsWith(date) && h >= 11) || (t.startsWith(nd) && h <= 2) ? [i] : [];
   });
 }
-function bestTowns(date) {
-  // Para hoy, solo las horas que faltan (desde la hora actual).
+// Para hoy, solo las horas que faltan (desde la hora actual).
+function hoursLeft(date) {
   const from = `${today}T${pad(Math.floor(nowMin / 60))}:00`;
-  const idx = windowIdx(date).filter((k) => date !== today || data.times[k] >= from);
+  return windowIdx(date).filter((k) => date !== today || data.times[k] >= from);
+}
+// Zonas de caza del día: igual que el círculo del mapa ("Máx. del día").
+function zonesFor(date) {
+  if (!data.grid) return [];
+  const idx = hoursLeft(date);
+  const cells = data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: Math.max(0, ...idx.map((i) => data.grid.score[k][i] ?? 0)) }));
+  return huntZones(cells, data.towns);
+}
+function bestTowns(date) {
+  const idx = hoursLeft(date);
   return data.towns.map((t) => {
     let i = -1, v = -1;
     for (const k of idx) if ((t.score[k] ?? 0) > v) { v = t.score[k]; i = k; }
@@ -94,10 +106,23 @@ function huntMessage(date, label, rank, prev) {
   const others = rank.slice(1, 4).filter((r) => r.score >= Math.max(25, MIN - 20))
     .map((r) => `• ${esc(r.t.name)} <b>${r.score}</b> · ${clock(r.peakMin)} h · ${r.dist} km`);
   const mov = s('mdir') == null ? null : `➡️ Las tormentas van hacia el <b>${rumbo(s('mdir'))}</b> a ${s('mspd')} km/h`;
+  // Zona de caza: el círculo del mapa.
+  const zs = zonesFor(date), z = zs[0];
+  const zone = !z ? [] : (() => {
+    const dc = Math.round(km(HOME, z.ctr)), edge = Math.max(0, Math.round(dc - z.r));
+    return [
+      `🎯 <b>Zona de caza: ${esc(z.town.name)}</b> (círculo de ~${Math.round(z.r)} km)`,
+      edge === 0 ? '   <b>Leones está dentro de la zona</b>' : `   El borde está a ${edge} km de Leones, hacia el ${rumbo(bearing(HOME, z.ctr))}`,
+      ...(zs[1] ? [`   También: zona ${esc(zs[1].town.name)} (${zs[1].v})`] : []),
+      `   <a href="${pin(z.ctr.lat, z.ctr.lon)}">Ver el centro de la zona</a>`,
+      '',
+    ];
+  })();
   return [
     b.score >= MIN ? `🌪️ <b>DÍA DE CAZA · ${label}</b> <i>${dayName(date)}</i>` : `🧪 <b>Prueba · ${label}</b> <i>${dayName(date)}</i> · hoy no da para salir`,
     `Potencial de tornado <b>${lv.label.toUpperCase()} · ${b.score}/100</b>${prev >= 0 ? ` <i>(subió de ${prev})</i>` : ''}`,
     '',
+    ...zone,
     `📍 <b>${esc(b.t.name)}</b> · pico a las ${clock(b.peakMin)} h`,
     `🚗 ${b.dist} km, ~${dur(drive)} desde Leones`,
     !late ? `⏰ Salir a las <b>${clock(leaveMin)}</b> para llegar 1 h antes`

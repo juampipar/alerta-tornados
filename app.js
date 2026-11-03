@@ -1,4 +1,4 @@
-import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo } from './lib/risk.mjs';
+import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 
 const $ = (s) => document.querySelector(s);
@@ -644,21 +644,8 @@ function renderWrf() {
 const zoneLayer = L.layerGroup().addTo(map);
 function huntZones() {
   const date = curDate();
-  const cells = S.data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: pick(S.data.grid.score[k], date).v }))
-    .filter((c) => c.v >= 45).sort((a, b) => b.v - a.v);
-  const zones = [];
-  for (const c of cells) {
-    if (zones.length >= 2) break;
-    if (zones.some((z) => km(z.peak, c) < 160)) continue;
-    const mem = cells.filter((x) => x.v >= Math.max(45, c.v - 10) && km(c, x) <= 120);
-    const w = mem.reduce((s, x) => s + x.v, 0);
-    const ctr = { lat: mem.reduce((s, x) => s + x.lat * x.v, 0) / w, lon: mem.reduce((s, x) => s + x.lon * x.v, 0) / w };
-    const r = Math.min(100, Math.max(35, Math.max(...mem.map((x) => km(ctr, x))) + 35));
-    if (zones.some((z) => km(z.ctr, ctr) < 120)) continue; // misma zona vista desde otra celda
-    const town = S.data.towns.filter((t) => !zones.some((z) => z.town === t)).reduce((a, b) => (km(ctr, b) < km(ctr, a) ? b : a));
-    zones.push({ peak: c, ctr, r, v: c.v, town });
-  }
-  return zones;
+  const cells = S.data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: pick(S.data.grid.score[k], date).v }));
+  return findZones(cells, S.data.towns);
 }
 function renderZones() {
   zoneLayer.clearLayers();
