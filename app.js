@@ -1,4 +1,4 @@
-import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo } from './lib/risk.mjs';
+import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 
 const $ = (s) => document.querySelector(s);
@@ -298,10 +298,10 @@ function renderHero(rank) {
       <div class="kicker">${z ? 'Zona de caza' : 'Sin zona de caza'} · ${day} <span class="conf conf-${conf(S.day).k}">Confianza ${conf(S.day).k}</span></div>
       <h2>${z ? `Zona ${esc(z.name)}` : esc(b.t.name)}</h2>
       <p class="verdict">${verdict(score)}</p>
-      <p class="sub">Ir hacia <b>${esc(b.t.name)}</b>${z && km(b.t, z.ctr) > z.r ? ` (pueblo más cercano: la zona empieza ${Math.round(km(b.t, z.ctr) - z.r)} km al ${rumbo(Math.atan2((z.ctr.lon - b.t.lon) * Math.cos((b.t.lat * Math.PI) / 180), z.ctr.lat - b.t.lat) * 180 / Math.PI)})` : ''}: ${b.dist} km desde ${esc(S.origin.label)} (~${driveHours(b.dist).toFixed(1)} h) · ${when}${z ? ` · círculo de ~${Math.round(z.r)} km` : ''}</p>
+      <p class="sub">${z ? 'Pueblo de referencia' : 'Ir hacia'} <b>${esc(b.t.name)}</b>${z && km(b.t, z.ctr) > z.r ? ` (pueblo más cercano: la zona empieza ${Math.round(km(b.t, z.ctr) - z.r)} km al ${rumbo(Math.atan2((z.ctr.lon - b.t.lon) * Math.cos((b.t.lat * Math.PI) / 180), z.ctr.lat - b.t.lat) * 180 / Math.PI)})` : ''}: ${b.dist} km desde ${esc(S.origin.label)} (~${driveHours(b.dist).toFixed(1)} h) · ${when}${z ? ` · círculo de ~${Math.round(z.r)} km` : ''}</p>
       ${z2 ? `<p class="sub">Otra zona: <b>${esc(z2.name)}</b> · ${z2.v}</p>` : ''}
       <p class="sub conftxt">${conf(S.day).txt}</p>
-      <a class="go" href="${dirLink(b.t.lat, b.t.lon)}" target="_blank" rel="noopener">Ruta a ${esc(b.t.name)} →</a>
+      ${z ? '<a class="go" href="#plan">👁 Dónde pararte y a qué hora ↓</a>' : `<a class="go" href="${dirLink(b.t.lat, b.t.lon)}" target="_blank" rel="noopener">Ruta a ${esc(b.t.name)} →</a>`}
     </div>
     <p class="mlegend">Ingredientes en <b>${esc(b.t.name)}</b>:</p>
     <div class="metrics">${metricsHtml(b)}</div>
@@ -363,7 +363,8 @@ function renderTimebar() {
 function render() {
   if (!S.data) return;
   const rank = townsRanked();
-  renderGrid(); S.zones = huntZones(); renderTowns(rank); renderHero(rank); renderPlan(); renderList(rank); renderTimebar(); renderSafety(); renderZones(); renderWrf();
+  renderGrid(); S.zones = huntZones(); renderTowns(rank); renderHero(rank); renderPlan(); fillPlace();
+  if ($('#vpshow')) $('#vpshow').onclick = () => { showTab('map'); map.flyTo([S.vp.lat, S.vp.lon], 9); $('.mapcard').scrollIntoView({ behavior: 'smooth' }); }; renderList(rank); renderTimebar(); renderSafety(); renderZones(); renderWrf();
 }
 
 /* ---------------- Plan de caza ---------------- */
@@ -380,6 +381,17 @@ function peakFor(t, date) {
   return { t, i, v, h: +ts.slice(11, 13) + (ts.startsWith(date) ? 0 : 24) };
 }
 
+// Nombre del 👁 punto para mirar (pueblo/paraje y ruta), con caché.
+const placeCache = new Map();
+async function fillPlace() {
+  const vp = S.vp;
+  const els = $$('.vpname');
+  if (!vp || !els.length) return;
+  const key = `${vp.lat.toFixed(2)},${vp.lon.toFixed(2)}`;
+  if (!placeCache.has(key)) placeCache.set(key, placeName(vp));
+  const n = await placeCache.get(key);
+  if (n && S.vp === vp) els.forEach((e) => (e.textContent = `cerca de ${n.place}${n.road ? `, ${n.road}` : ''}`));
+}
 // Zonas de caza con el máximo del día (de 11 a 2 h), sin importar el control de hora.
 function dayZones(date) {
   const idx = windowIdx(date);
@@ -419,6 +431,14 @@ function renderPlan() {
   const from = hasMove ? rumbo(mdir + 180) : 'oeste', to = hasMove ? rumbo(mdir) : 'este';
   const side = hasMove ? rumbo(mdir - 90) : 'norte'; // en el hemisferio sur: lado izquierdo de la trayectoria (entra el aire cálido)
   const hail = hasMove ? rumbo(mdir + 90) : 'sur';
+  // 👁 Punto para mirar: al costado del camino de las tormentas, no la ciudad.
+  const vp = dz ? viewpoint(dz, hasMove ? mdir : 90) : null;
+  S.vp = vp ? { ...vp, z: dz } : null;
+  const vdist = vp ? Math.round(km(S.origin, vp)) : dist, vdrive = driveHours(vdist);
+  const vleave = arrive - vdrive;
+  const hit = vp && hasMove ? routeCheck(S.origin, vp, dz, mdir, mspd, vleave, p.h) : null;
+  const safe = hit ? safeLeave(S.origin, vp, dz, mdir, mspd, vleave, p.h) : null;
+  const vpTxt = vp ? `el <b>👁 punto para mirar</b> (<span class="vpname">${vp.lat.toFixed(2)}, ${vp.lon.toFixed(2)}</span>)` : esc(t.name);
 
   let badge = 'Vale salir', cls = 'go';
   if (sc < 65) { badge = 'Si estás cerca'; cls = 'maybe'; }
@@ -427,7 +447,7 @@ function renderPlan() {
 
   let late = '';
   if (nowH >= 0 && nowH > p.h) late = `<b>El pico ya pasó</b> (${hm(p.h)}). No salgas ahora.`;
-  else if (nowH >= 0 && dist >= 15 && nowH + 0.25 >= leave) late = `<b>Si vas, salí ya:</b> llegás a eso de las ${hm(nowH + drive + 0.25)}.`;
+  else if (nowH >= 0 && vdist >= 15 && nowH + 0.25 >= (vp ? vleave : leave)) late = `<b>Si vas, salí ya:</b> llegás a eso de las ${hm(nowH + (vp ? vdrive : drive) + 0.25)}.`;
 
   const moveTxt = hasMove
     ? `<b>Hacia dónde van:</b> vienen del <b>${from}</b> y van hacia el <b>${to}</b> a unos <b>${mspd} km/h</b>.${mspd >= 50 ? ' <b>Son rápidas:</b> no las persigas por detrás, dejá que vengan hacia vos.' : ''}`
@@ -439,6 +459,9 @@ function renderPlan() {
   if (S.day === 1) warn.push('Confianza media: revisá el plan mañana a la mañana antes de salir.');
   if (sc < 65) warn.push('Potencial moderado: vale si estás cerca. Lo más probable es ver tormentas fuertes, no tornados.');
   if (late) warn.unshift(late);
+  if (hit) warn.unshift(safe != null
+    ? `<b>Salí a las ${hm(safe)} o antes:</b> más tarde tu camino cruza el paso de las tormentas (cerca de las ${hm(hit.h)}). Si salís después, entrá por el <b>${side}</b>, sin cruzar por delante de ellas.`
+    : `<b>Tu camino cruza el paso de las tormentas</b> cerca de las ${hm(hit.h)}: entrá por el <b>${side}</b>, sin cruzar por delante de ellas.`);
   const warnHtml = warn.length ? `<div class="pwarn">${warn.map((w) => `<p>⚠️ ${w}</p>`).join('')}</div>` : '';
   const foot = '<p class="muted">Es un plan orientativo armado con el pronóstico: el lugar exacto lo define la tormenta el mismo día. Guiate por el radar y los avisos del SMN.</p>';
 
@@ -459,17 +482,24 @@ function renderPlan() {
   const rows = [];
   if (leave >= 11) rows.push(['10:00', 'Mirá el panel: ¿sigue en “Vale salir”? ¿Hay avisos del SMN en la zona?']);
   if (leave >= 12.5) rows.push(['12:00', 'Decidí si vas. Si el puntaje bajó mucho o el plan cambió de zona, no vayas.']);
-  if (dist >= 15) rows.push([hm(leave), `<b>Salí</b> desde ${esc(S.origin.label)} hacia ${esc(t.name)} (${dist} km, ~${drive.toFixed(1)} h). Tanque lleno y celular cargado.`]);
-  rows.push([hm(arrive), dist >= 15 ? `<b>Llegá</b> a ${station}. Baño, comida y nafta.` : `<b>Estás en la zona:</b> esperá en ${station}. Baño, comida y nafta.`]);
+  if (vp) {
+    if (vdist >= 15) rows.push([hm(hit && safe != null ? safe : vleave), `<b>Salí</b> desde ${esc(S.origin.label)} hacia ${vpTxt} (${vdist} km en línea recta, ~${vdrive.toFixed(1)} h). Tanque lleno y celular cargado. Nafta y baño: ${station}.`]);
+    rows.push([hm(arrive), `<b>Llegá al punto</b> y buscá cerca un camino <b>asfaltado</b> con vista abierta hacia el ${from}. ${hit ? '' : '✅ Con este horario el camino no cruza por delante de las tormentas.'}`]);
+  } else {
+    if (dist >= 15) rows.push([hm(leave), `<b>Salí</b> desde ${esc(S.origin.label)} hacia ${esc(t.name)} (${dist} km, ~${drive.toFixed(1)} h). Tanque lleno y celular cargado.`]);
+    rows.push([hm(arrive), dist >= 15 ? `<b>Llegá</b> a ${station}. Baño, comida y nafta.` : `<b>Estás en la zona:</b> esperá en ${station}. Baño, comida y nafta.`]);
+  }
   rows.push([`${hm(start)}–${hm(p.h)}`, `Mirá el radar <b>cada 10 minutos</b>. Buscá una tormenta <b>aislada</b> que crezca rápido, hacia el ${from}.`]);
   rows.push(['Cuando aparece', `Mirá en la animación hacia dónde va. Acercate hasta quedar a <b>~20 km</b>, del lado <b>${side}</b> (mirá el dibujo).`]);
   rows.push(['Mirando', `Buscá la base oscura y baja, y si gira. Si en el radar se te acerca, movete hacia el <b>${side}</b>.`]);
   rows.push([hm(sunset), '<b>Se pone el sol: volvé</b>, aunque la tormenta siga.']);
 
-  el.innerHTML = head(badge, cls, `${dz ? `Zona ${esc(dz.name)} · ` : ''}ir hacia <b>${esc(t.name)}</b> · potencial ${sc}`) + warnHtml
+  el.innerHTML = head(badge, cls, `${dz ? `Zona ${esc(dz.name)} · potencial ${sc}<br><span class="sub">👁 Punto para mirar: <b class="vpname">${vp.lat.toFixed(2)}, ${vp.lon.toFixed(2)}</b> · pueblo de referencia ${esc(t.name)}</span>` : `ir hacia <b>${esc(t.name)}</b> · potencial ${sc}`}`) + warnHtml
     + `<h3 class="ptitle">Tu día, hora por hora</h3>`
     + `<table class="daytable"><tbody>${rows.map(([h, x]) => `<tr><td>${h}</td><td>${x}</td></tr>`).join('')}</tbody></table>`
-    + (dist < 15 ? '' : `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, t)}" target="_blank" rel="noopener">Ruta a ${esc(t.name)} →</a></div>`)
+    + (vp ? `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, vp)}" target="_blank" rel="noopener">Ruta al 👁 punto para mirar →</a> <button class="chip" id="vpshow">Ver en el mapa</button></div>
+        <p class="muted">El punto es aproximado: queda a ~${Math.round(km(vp, dz.ctr))} km del centro de la zona, del lado <b>${side}</b>. Antes de llegar fijate en el radar que la tormenta no esté ya ahí.</p>`
+      : (dist < 15 ? '' : `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, t)}" target="_blank" rel="noopener">Ruta a ${esc(t.name)} →</a></div>`))
     + `<h3 class="ptitle">Dónde pararte</h3>
       <div class="dwrap">${stormDiagram(hasMove ? mdir : 100)}
         <ul>
@@ -654,9 +684,29 @@ function huntZones() {
   const cells = S.data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: pick(S.data.grid.score[k], date).v }));
   return findZones(cells, S.data.towns);
 }
+// Centro de la zona principal hora por hora (11 a 2 h) para ver hacia dónde se mueve.
+function zoneTrack(date) {
+  return windowIdx(date).map((i) => {
+    const cells = S.data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: S.data.grid.score[k][i] ?? 0 }));
+    const z = findZones(cells, S.data.towns)[0];
+    return z && { h: +S.data.times[i].slice(11, 13), ...z.ctr, v: z.v };
+  }).filter(Boolean);
+}
 function renderZones() {
   zoneLayer.clearLayers();
   if (!S.layers.zonas) return;
+  const tr = zoneTrack(curDate());
+  if (tr.length >= 2) {
+    L.polyline(tr.map((x) => [x.lat, x.lon]), { pane: 'smn', color: '#ffffff', weight: 2, opacity: 0.6, dashArray: '2 6', interactive: false }).addTo(zoneLayer);
+    tr.forEach((x, k) => {
+      if (k > 0 && km(x, tr[k - 1]) < 15) return; // no repetir etiquetas si la zona casi no se movió
+      L.marker([x.lat, x.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'tracklabel', html: `<span>${x.h} h</span>`, iconSize: null }) }).addTo(zoneLayer);
+    });
+  }
+  if (S.vp) {
+    L.marker([S.vp.lat, S.vp.lon], { pane: 'smn', icon: L.divIcon({ className: 'vpmark', html: '<span>👁</span>', iconSize: null }) })
+      .bindTooltip('<b>Punto para mirar</b><br>Al costado del camino de las tormentas: se ve la base y el granizo queda del otro lado. Es aproximado: buscá cerca un camino asfaltado con vista abierta.', { sticky: true }).addTo(zoneLayer);
+  }
   (S.zones ?? []).forEach((z, n) => {
     const lv = level(z.v);
     const tip = `<b>Zona ${esc(z.name)}</b> · máximo ${z.v} (${lv.label.toLowerCase()})<br>Según el pronóstico, adentro de este círculo (~${Math.round(z.r)} km) es donde más chances hay de supercélulas con rotación. El lugar exacto lo define la tormenta el mismo día.<br><i>El ${z.v} es el punto más fuerte del círculo. Los pueblos de la lista tienen su propio puntaje, que puede ser menor si no están justo en ese punto.</i>`;
