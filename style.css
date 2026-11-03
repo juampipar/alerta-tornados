@@ -255,3 +255,11 @@ footer p { margin: 4px 0; }
 
 .tracklabel span { display: inline-block; transform: translate(-50%, -50%); font-size: .7rem; font-weight: 700; color: #fff; background: rgba(10,15,28,.8); border: 1px solid rgba(255,255,255,.4); border-radius: 6px; padding: 0 4px; white-space: nowrap; }
 .vpmark span { display: inline-block; transform: translate(-50%, -50%); font-size: 1.4rem; filter: drop-shadow(0 0 3px #000); }
+
+.vpmark span b { font-size: .7rem; color: #fff; background: #0a0f1c; border-radius: 999px; padding: 0 4px; margin-left: -4px; vertical-align: top; }
+.opts { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 12px; }
+.opt { border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 10px; padding: 10px 12px; background: var(--bg2); }
+.opt p { margin: 4px 0; font-size: .85rem; }
+.opt .ohead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.opt .sc { color: #0a0f1c; font-weight: 800; border-radius: 8px; padding: 2px 8px; }
+.opt .owarn { color: #ffb3b3; } .opt .ook { color: #9be8c4; }

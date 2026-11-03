@@ -10,7 +10,7 @@
 //     cerca de Leones o de las zonas marcadas. Los avisos del SMN de días comunes no se mandan.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { HOME, level, km, driveHours, rumbo, huntZones, goTo, viewpoint, routeCheck, safeLeave, placeName } from '../lib/risk.mjs';
+import { HOME, level, km, driveHours, rumbo, huntZones, goTo, viewpoint, routeCheck, safeLeave, placeName, huntOptions } from '../lib/risk.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -66,11 +66,31 @@ function hoursLeft(date) {
   return windowIdx(date).filter((k) => date !== today || data.times[k] >= from);
 }
 // Zonas de caza del día: igual que el círculo del mapa ("Máx. del día").
-function zonesFor(date) {
+function zonesFor(date, max = 2) {
   if (!data.grid) return [];
   const idx = hoursLeft(date);
-  const cells = data.grid.pts.map(([lat, lon], k) => ({ lat, lon, v: Math.max(0, ...idx.map((i) => data.grid.score[k][i] ?? 0)) }));
-  return huntZones(cells, data.towns);
+  const cells = data.grid.pts.map(([lat, lon], k) => {
+    let v = 0, i = idx[0];
+    for (const j of idx) if ((data.grid.score[k][j] ?? 0) > v) { v = data.grid.score[k][j]; i = j; }
+    return { lat, lon, v, i };
+  });
+  return huntZones(cells, data.towns, max);
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Otras zonas a las que se puede ir (2.ª a 4.ª), una línea cada una.
+async function otherOptionsTxt(date) {
+  const zs = zonesFor(date, 4);
+  if (zs.length < 2) return [];
+  const opts = huntOptions(zs, data.towns, data.times, date, HOME).slice(1);
+  const lines = [];
+  for (const [k, o] of opts.entries()) {
+    await sleep(1100); // OpenStreetMap pide como máximo 1 consulta por segundo
+    const n = await placeName(o.vp);
+    const lugar = n ? `cerca de ${esc(n.place)}` : `${o.vp.lat.toFixed(2)}, ${o.vp.lon.toFixed(2)}`;
+    const vp = { lat: +o.vp.lat.toFixed(4), lon: +o.vp.lon.toFixed(4) };
+    lines.push(`${['2️⃣', '3️⃣', '4️⃣'][k]} Zona ${esc(o.z.name)} · <b>${o.z.v}</b> · pico ${clock(o.peakH * 60)} h\n   👁 ${lugar} · ${o.dist} km · salir ${clock(o.leave * 60)}${o.hit ? ' ⚠️' : ''} · <a href="${maps(vp.lat, vp.lon)}">ruta</a>`);
+  }
+  return lines.length ? ['', '<b>Otras opciones para ir</b>', ...lines] : [];
 }
 function bestTowns(date) {
   const idx = hoursLeft(date);
@@ -116,7 +136,6 @@ async function huntMessage(date, label, rank, prev) {
     return [
       `🎯 <b>Zona de caza: ${esc(z.name)}</b> (círculo de ~${Math.round(z.r)} km)`,
       edge === 0 ? '   <b>Leones está dentro de la zona</b>' : `   El borde está a ${edge} km de Leones, hacia el ${rumbo(bearing(HOME, z.ctr))}`,
-      ...(zs[1] ? [`   Otra zona: ${esc(zs[1].name)} · ${zs[1].v}`] : []),
       `   <a href="${pin(z.ctr.lat, z.ctr.lon)}">Ver el centro de la zona</a>`,
       '',
     ];
@@ -131,6 +150,7 @@ async function huntMessage(date, label, rank, prev) {
   const hit = vp && spd != null ? routeCheck(HOME, vp, z, dirM, spd, (lateV ? nowMin : vleaveMin) / 60, b.peakMin / 60) : null;
   const safe = hit && !lateV ? safeLeave(HOME, vp, z, dirM, spd, vleaveMin / 60, b.peakMin / 60) : null;
   const name = vp ? await placeName(vp) : null;
+  const others = await otherOptionsTxt(date);
   const side = rumbo(dirM - 90);
   const go = [
     vp ? `👁 <b>Punto para mirar:</b> ${name ? `cerca de <b>${esc(name.place)}</b>${name.road ? ` (${esc(name.road)})` : ''}` : `${vp.lat.toFixed(2)}, ${vp.lon.toFixed(2)}`}`
@@ -156,6 +176,7 @@ async function huntMessage(date, label, rank, prev) {
     '',
     `<b>Ingredientes en ${esc(b.t.name)}</b>`,
     ...ing,
+    ...others,
     '',
     `<a href="${maps(tgt.lat, tgt.lon)}">🗺️ Ruta ${vp ? 'al punto para mirar' : `a ${esc(b.t.name)}`}</a>  ·  <a href="${PANEL}">📡 Radar y mapa</a>`,
     `<i>Es potencial según el modelo, no un aviso de tornado.</i>`,
