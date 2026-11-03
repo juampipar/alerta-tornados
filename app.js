@@ -168,7 +168,7 @@ async function loadRadar() {
     if (S.layers.radar) frames.forEach((f) => f.addTo(map));
     fi = frames.length - 1;
     clearInterval(radarTimer);
-    if (!frames.length) return stamp('Radar sin datos');
+    if (!frames.length) return S.layers.radar && stamp('Radar sin datos');
     frames[fi].setOpacity(0.8);
     let hold = 0;
     radarTimer = setInterval(() => {
@@ -179,7 +179,7 @@ async function loadRadar() {
       frames[fi].setOpacity(0.8);
       if (S.layers.radar) stamp(`Radar ${fmt(radarTimes[fi], { hour: '2-digit', minute: '2-digit' })}${fi === frames.length - 1 ? ' · último' : ''}`);
     }, 700);
-  } catch { stamp('Radar no disponible'); }
+  } catch { if (S.layers.radar) stamp('Radar no disponible'); }
 }
 
 $$('#layers .chip').forEach((b) => (b.onclick = () => {
@@ -654,7 +654,8 @@ function huntZones() {
     const w = mem.reduce((s, x) => s + x.v, 0);
     const ctr = { lat: mem.reduce((s, x) => s + x.lat * x.v, 0) / w, lon: mem.reduce((s, x) => s + x.lon * x.v, 0) / w };
     const r = Math.min(100, Math.max(35, Math.max(...mem.map((x) => km(ctr, x))) + 35));
-    const town = S.data.towns.reduce((a, b) => (km(ctr, b) < km(ctr, a) ? b : a));
+    if (zones.some((z) => km(z.ctr, ctr) < 120)) continue; // misma zona vista desde otra celda
+    const town = S.data.towns.filter((t) => !zones.some((z) => z.town === t)).reduce((a, b) => (km(ctr, b) < km(ctr, a) ? b : a));
     zones.push({ peak: c, ctr, r, v: c.v, town });
   }
   return zones;
@@ -667,7 +668,8 @@ function renderZones() {
     const tip = `<b>Zona ${esc(z.town.name)}</b> · potencial ${z.v} (${lv.label.toLowerCase()})<br>Según el pronóstico, adentro de este círculo (~${Math.round(z.r)} km) es donde más chances hay de supercélulas con rotación. El lugar exacto lo define la tormenta el mismo día.`;
     L.circle([z.ctr.lat, z.ctr.lon], { pane: 'smn', radius: z.r * 1000, color: lv.color, weight: n ? 2 : 3, dashArray: '10 7', fillColor: lv.color, fillOpacity: 0.06 })
       .bindTooltip(tip, { sticky: true }).addTo(zoneLayer);
-    L.marker([z.ctr.lat + z.r / 111.2, z.ctr.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'zonelabel', html: `<span style="--c:${lv.color}">Zona ${esc(z.town.name)} · ${z.v}</span>`, iconSize: null }) }).addTo(zoneLayer);
+    // Etiqueta arriba del círculo; la de la segunda zona, abajo, para que no se pisen.
+    L.marker([z.ctr.lat + (n ? -1 : 1) * (z.r / 111.2), z.ctr.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'zonelabel' + (n ? ' below' : ''), html: `<span style="--c:${lv.color}">Zona ${esc(z.town.name)} · ${z.v}</span>`, iconSize: null }) }).addTo(zoneLayer);
   });
 }
 
