@@ -1,4 +1,4 @@
-import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions } from './lib/risk.mjs';
+import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, nearestStop, plainKey } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 
 const $ = (s) => document.querySelector(s);
@@ -286,27 +286,78 @@ function metricsHtml(r) {
 }
 const dirLink = (lat, lon) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
 
+
+/* ---------------- Opciones: dónde parar ---------------- */
+// Hora actual (Argentina) con minutos.
+const nowDec = () => { const d = new Date(Date.now() - 3 * 3600e3); return { date: d.toISOString().slice(0, 10), h: d.getUTCHours() + d.getUTCMinutes() / 60 }; };
+// Paradas encontradas (estación de servicio o pueblo), guardadas también en el navegador.
+const stopCache = new Map();
+try { for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem('stops') || '{}'))) stopCache.set(k, v); } catch { /* sin almacenamiento */ }
+const stopPending = new Set();
+function buildOptions(date) {
+  const now = nowDec();
+  return huntOptions(dayZones(date, 4), S.data.towns, S.data.times, date, S.origin, (b) => stopCache.get(plainKey(b)) || null, date === now.date ? now.h : null);
+}
+// Busca las paradas que falten y vuelve a dibujar cuando llegan.
+async function fetchStops() {
+  const miss = (S.opts ?? []).map((o) => o.base).filter((b) => !stopCache.has(plainKey(b)) && !stopPending.has(plainKey(b)));
+  if (!miss.length) return;
+  for (const b of miss) {
+    const k = plainKey(b);
+    stopPending.add(k);
+    const st = await nearestStop(b, S.data.towns);
+    stopPending.delete(k);
+    if (st) {
+      stopCache.set(k, st);
+      try { localStorage.setItem('stops', JSON.stringify(Object.fromEntries([...stopCache].slice(-80)))); } catch { /* sin almacenamiento */ }
+    }
+  }
+  render();
+}
+const stopTxt = (o) => (o.stop ? `${o.stop.kind === 'estación' ? '⛽ ' : ''}<b>${esc(o.stop.label)}</b>` : '<b>punto aproximado</b>');
+const timeTxt = (o) => !o.reachable ? `<span class="owarn">no llegás antes del pico (${hm(o.peakH)})</span>`
+  : o.late ? `<b>salí ya</b>: llegás ~${hm(o.arriveAt)}` : `salir a las <b>${hm(o.leave)}</b>`;
+const routeTxt = (o) => o.hit ? `<span class="owarn">⚠️ el camino cruza el paso de las tormentas (~${hm(o.hit.h)}): entrá por el ${rumbo(o.mdir - 90)}</span>`
+  : o.mspd != null && o.reachable ? '<span class="ook">✅ el camino no cruza por delante</span>' : '';
+// Ingredientes de la zona: el pueblo más cercano a la hora pico.
+const ingAt = (t, i) => ({ cape: t.cape[i], shear: t.shear[i], ll: t.ll[i], srh: t.srh?.[i], lcl: t.lcl?.[i], td: t.td[i], cin: t.cin[i], li: t.li[i] });
+
 // Pueblo al que ir: el de la zona de caza principal (o el de más puntaje si no hay zona).
 const target = (rank) => (S.zones?.[0] ? goTo(S.zones[0], rank) : rank[0]);
 function renderHero(rank) {
   if (!rank[0]) { $('#hero').textContent = 'Sin datos para este día.'; return; }
-  const z = S.zones?.[0], z2 = S.zones?.[1], b = target(rank);
-  const score = z ? z.v : b.score, lv = level(score);
-  const when = S.max ? `pico a las ${b.hour}` : `a las ${S.hour} h`;
-  const day = ['hoy', 'mañana', 'pasado mañana'][S.day];
-  $('#hero').innerHTML = `
-    <div class="gauge" style="--v:${score};--c:${lv.color}"><span>${score}<small>${lv.label}</small></span></div>
+  const o = S.opts?.[0], day = ['hoy', 'mañana', 'pasado mañana'][S.day];
+  const confHtml = `<span class="conf conf-${conf(S.day).k}">Confianza ${conf(S.day).k}</span>`;
+  if (!o) {
+    const b = rank[0], lv = level(b.score);
+    $('#hero').innerHTML = `
+    <div class="gauge" style="--v:${b.score};--c:${lv.color}"><span>${b.score}<small>${lv.label}</small></span></div>
     <div>
-      <div class="kicker">${z ? 'Zona de caza' : 'Sin zona de caza'} · ${day} <span class="conf conf-${conf(S.day).k}">Confianza ${conf(S.day).k}</span></div>
-      <h2>${z ? `Zona ${esc(z.name)}` : esc(b.t.name)}</h2>
-      <p class="verdict">${verdict(score)}</p>
-      <p class="sub">${z ? 'Pueblo de referencia' : 'Ir hacia'} <b>${esc(b.t.name)}</b>${z && km(b.t, z.ctr) > z.r ? ` (pueblo más cercano: la zona empieza ${Math.round(km(b.t, z.ctr) - z.r)} km al ${rumbo(Math.atan2((z.ctr.lon - b.t.lon) * Math.cos((b.t.lat * Math.PI) / 180), z.ctr.lat - b.t.lat) * 180 / Math.PI)})` : ''}: ${b.dist} km desde ${esc(S.origin.label)} (~${driveHours(b.dist).toFixed(1)} h) · ${when}${z ? ` · círculo de ~${Math.round(z.r)} km` : ''}</p>
-      ${z2 ? `<p class="sub">Otra zona: <b>${esc(z2.name)}</b> · ${z2.v}</p>` : ''}
-      <p class="sub conftxt">${conf(S.day).txt}</p>
-      ${z ? '<a class="go" href="#plan">👁 Dónde pararte y a qué hora ↓</a>' : `<a class="go" href="${dirLink(b.t.lat, b.t.lon)}" target="_blank" rel="noopener">Ruta a ${esc(b.t.name)} →</a>`}
+      <div class="kicker">Sin zona de caza · ${day} ${confHtml}</div>
+      <h2>${S.day === 0 ? 'Hoy' : day[0].toUpperCase() + day.slice(1)} no da</h2>
+      <p class="verdict">${verdict(b.score)}</p>
+      <p class="sub">Lo mejor es ${esc(b.t.name)} con ${b.score}${S.day === 0 ? ' en lo que queda del día' : ''}.</p>
     </div>
     <p class="mlegend">Ingredientes en <b>${esc(b.t.name)}</b>:</p>
     <div class="metrics">${metricsHtml(b)}</div>
+`;
+    return;
+  }
+  const lv = level(o.z.v);
+  $('#hero').innerHTML = `
+    <div class="gauge" style="--v:${o.z.v};--c:${lv.color}"><span>${o.z.v}<small>${lv.label}</small></span></div>
+    <div>
+      <div class="kicker">Mejor opción · ${day} ${confHtml}</div>
+      <h2>Zona ${esc(o.z.name)}</h2>
+      <p class="verdict">${verdict(o.z.v)}</p>
+      <p class="sub">👁 Parar en ${stopTxt(o)} (${vpSpan(o.vp)})</p>
+      <p class="sub">Pico <b>${hm(o.peakH)}</b> · ${o.dist} km desde ${esc(S.origin.label)} (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
+      ${routeTxt(o) ? `<p class="sub">${routeTxt(o)}</p>` : ''}
+      <p class="sub conftxt">${conf(S.day).txt}</p>
+      <div class="pbtns"><a class="go" href="${dirLink(o.vp.lat, o.vp.lon)}" target="_blank" rel="noopener">Ruta a la parada →</a> <a class="chip" href="#plan">Plan hora por hora ↓</a></div>
+    </div>
+    <p class="mlegend">Ingredientes de la zona (en ${esc(o.town.name)} a las ${hm(o.peakH)}):</p>
+    <div class="metrics">${metricsHtml(ingAt(o.town, o.i))}</div>
     <p class="mlegend"><span class="sw sw-good">rojo</span> favorece tornados · <span class="sw sw-mid">naranja</span> a medias · <span class="sw sw-low">gris</span> no ayuda · <a href="#guia">Guía: cómo leerlo y qué hacer ↓</a></p>
     <details class="how"><summary>¿Cómo se calcula el puntaje?</summary><ul>
       <li><b>Energía × viento:</b> se multiplican. Sin CAPE no hay tormenta por más viento que haya; sin cizalladura la tormenta no se organiza ni rota.</li>
@@ -331,9 +382,22 @@ function spark(t) {
     <polyline points="${line}" fill="none" stroke="${level(Math.max(...pts.map((p) => p[1]))).color}" stroke-width="2" vector-effect="non-scaling-stroke"/>${mark}</svg>`;
 }
 function renderList(rank) {
-  $('#rankinfo').textContent = `${S.max ? (S.day === 0 ? 'Máximo de lo que queda del día (hasta las 2 h)' : 'Máximo entre las 11 h y las 2 h') : `A las ${S.hour} h`} · distancias desde ${S.origin.label}`;
+  const opts = S.opts ?? [];
+  $('#rankinfo').textContent = opts.length
+    ? `Dónde parar ${S.day === 0 ? 'con lo que queda del día' : ''}: primero las que llegás a tiempo · desde ${S.origin.label}`
+    : `Sin zonas de caza ${S.day === 0 ? 'en lo que queda del día' : 'este día'}.`;
+  const optHtml = opts.map((o, k) => {
+    const c = level(o.z.v).color;
+    return `<li class="optrow${o.reachable ? '' : ' dim'}" style="--c:${c}">
+      <div class="ohead"><span class="sc" style="background:${c}">${o.z.v}</span><b>${k + 1}. Zona ${esc(o.z.name)}</b></div>
+      <p>👁 ${stopTxt(o)} · ${vpSpan(o.vp)}</p>
+      <p>Pico <b>${hm(o.peakH)}</b> · ${o.dist} km (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
+      ${routeTxt(o) ? `<p>${routeTxt(o)}</p>` : ''}
+      <div class="pbtns"><a class="go" href="${dirLink(o.vp.lat, o.vp.lon)}" target="_blank" rel="noopener">Ruta →</a> <button class="chip optshow" data-k="${k}">Ver en el mapa</button></div>
+    </li>`;
+  }).join('');
   const shown = S.all ? rank : rank.slice(0, 10);
-  $('#list').innerHTML = shown.map((r, k) => {
+  const towns = shown.map((r, k) => {
     const lv = level(r.score);
     return `<li class="row" data-k="${k}">
       <span class="sc" style="background:${lv.color}">${r.score}</span>
@@ -341,7 +405,9 @@ function renderList(rank) {
       <a class="go" href="${dirLink(r.t.lat, r.t.lon)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Ir</a>
       ${spark(r.t)}
     </li>`;
-  }).join('') + (rank.length > 10 ? `<li><button class="chip more" id="more">${S.all ? 'Ver menos' : `Ver las ${rank.length}`}</button></li>` : '');
+  }).join('') + (rank.length > 10 ? `<li><button class="chip more" id="more">${S.all ? 'Ver menos' : `Ver los ${rank.length}`}</button></li>` : '');
+  $('#list').innerHTML = optHtml + `<li class="townsbox"><details id="townsd" ${S.townsOpen ? 'open' : ''}><summary>Puntaje por pueblo (${S.max ? 'máximo' : `a las ${S.hour} h`})</summary><ol class="towns">${towns}</ol></details></li>`;
+  $('#townsd').ontoggle = (e) => { S.townsOpen = e.target.open; };
   if ($('#more')) $('#more').onclick = () => { S.all = !S.all; renderList(rank); };
   $$('#list .row').forEach((li) => (li.onclick = () => focusTown(rank[+li.dataset.k])));
 }
@@ -365,10 +431,14 @@ function renderTimebar() {
 function render() {
   if (!S.data) return;
   const rank = townsRanked();
-  renderGrid(); S.zones = huntZones(); renderTowns(rank); renderHero(rank); renderPlan(); fillPlace();
-  const fly = (p) => { showTab('map'); map.flyTo([p.lat, p.lon], 9); $('.mapcard').scrollIntoView({ behavior: 'smooth' }); };
-  if ($('#vpshow')) $('#vpshow').onclick = () => fly(S.vp);
-  $$('.optshow').forEach((b) => (b.onclick = () => fly(S.opts[+b.dataset.k].vp))); renderList(rank); renderTimebar(); renderSafety(); renderZones(); renderWrf();
+  S.opts = buildOptions(curDate());
+  S.zones = S.opts.map((o) => o.z); // los círculos del mapa siguen el plan del día (no rotan con la hora)
+  S.vp = S.opts[0]?.vp ?? null;
+  renderGrid(); renderTowns(rank); renderHero(rank); renderPlan(); renderList(rank);
+  renderTimebar(); renderSafety(); renderZones(); renderWrf(); fillPlace();
+  const fly = (p) => { showTab('map'); map.flyTo([p.lat, p.lon], 10); $('.mapcard').scrollIntoView({ behavior: 'smooth' }); };
+  $$('.optshow').forEach((x) => (x.onclick = (e) => { e.stopPropagation(); fly(S.opts[+x.dataset.k].vp); }));
+  fetchStops();
 }
 
 /* ---------------- Plan de caza ---------------- */
@@ -405,31 +475,15 @@ function dayZones(date, max = 2) {
   });
   return findZones(cells, S.data.towns, max);
 }
-// Tarjetas compactas con las otras zonas a las que se puede ir.
-function otherOptions(opts) {
-  if (!opts.length) return '';
-  const lv = (v) => level(v).color;
-  return `<h3 class="ptitle">Otras opciones para ir</h3><p class="muted">Si la principal no se arma o te queda lejos, probá alguna de estas. Cada una tiene su 👁 en el mapa.</p>
-    <div class="opts">${opts.map((o, k) => `
-      <div class="opt" style="--c:${lv(o.z.v)}">
-        <div class="ohead"><b>${k + 2}. Zona ${esc(o.z.name)}</b><span class="sc" style="background:${lv(o.z.v)}">${o.z.v}</span></div>
-        <p>👁 ${vpSpan(o.vp)} · pico <b>${hm(o.peakH)}</b></p>
-        <p>${o.dist} km desde ${esc(S.origin.label)} (~${o.drive.toFixed(1)} h) · salir a las <b>${hm(o.leave)}</b>${o.mspd != null ? ` · tormentas al ${rumbo(o.mdir)} a ${o.mspd} km/h` : ''}</p>
-        ${o.hit ? `<p class="owarn">⚠️ ${o.safe != null ? `Más tarde, el camino cruza el paso de las tormentas (~${hm(o.hit.h)})` : `El camino cruza el paso de las tormentas (~${hm(o.hit.h)}): entrá por el ${rumbo(o.mdir - 90)}`}</p>` : o.mspd != null ? '<p class="ook">✅ Con ese horario el camino no cruza por delante</p>' : ''}
-        <div class="pbtns"><a class="go" href="${mapsDir(S.origin, o.vp)}" target="_blank" rel="noopener">Ruta →</a> <button class="chip optshow" data-k="${k + 1}">Ver en el mapa</button></div>
-      </div>`).join('')}</div>`;
-}
 function renderPlan() {
   const el = $('#plan');
   const date = curDate();
   const peaks = S.data.towns.map((t) => peakFor(t, date)).filter(Boolean).sort((a, b) => b.v - a.v || km(S.origin, a.t) - km(S.origin, b.t));
-  // El plan usa siempre el máximo del día: zona de caza del día y su pueblo de destino.
-  const dzs = dayZones(date, 4), dz = dzs[0];
-  S.opts = huntOptions(dzs, S.data.towns, S.data.times, date, S.origin);
-  const goT = dz && goTo(dz, peaks.map((x) => ({ ...x, score: x.v }))).t;
-  const p = (goT && peaks.find((x) => x.t === goT)) || peaks[0];
+  // El plan es la opción 1 de "Dónde ir" (la mejor a la que llegás a tiempo).
+  const o = S.opts?.[0], dz = o?.z;
+  const p = o ? { t: o.town, i: o.i, h: o.peakH, v: o.z.v } : peaks[0];
   if (!p) { el.innerHTML = ''; return; }
-  const sc = dz ? dz.v : p.v; // puntaje del día = el de la zona
+  const sc = p.v;
   const t = p.t, dist = Math.round(km(S.origin, t)), drive = driveHours(dist);
   const dayTxt = ['hoy', 'mañana', 'pasado mañana'][S.day];
   const head = (badge, cls, title) => `<div class="planhead"><h2>Plan de caza · ${dayTxt}</h2><span class="pbadge ${cls}">${badge}</span></div><p class="plantitle">${title}</p>`;
@@ -437,30 +491,35 @@ function renderPlan() {
   // ¿Vale la pena?
   if (sc < 45) {
     const other = dates().map((d, k) => ({ k, best: dayZones(d)[0]?.v ?? 0 })).filter((x) => x.k !== S.day && x.best >= 45);
-    el.innerHTML = head('No salgas', 'no', `${dayTxt[0].toUpperCase() + dayTxt.slice(1)} no da: el máximo del día es ${sc}. Faltan ingredientes para tormentas que giren.`)
+    el.innerHTML = head('No salgas', 'no', `${dayTxt[0].toUpperCase() + dayTxt.slice(1)} no da: el máximo ${S.day === 0 ? 'de lo que queda del día' : 'del día'} es ${sc}. Faltan ingredientes para tormentas que giren.`)
       + (other.length ? `<p class="sub">Mirá ${other.map((x) => `<b>${['hoy', 'mañana', 'pasado mañana'][x.k]}</b>`).join(' y ')}: ahí sí hay potencial.</p>` : '<p class="sub">Ningún día de los próximos tres tiene potencial. Quedate tranquilo.</p>');
     return;
   }
 
+  // Hoy y ya no llegás a ninguna zona antes de su pico: no armar un viaje.
+  if (o && !o.reachable) {
+    const tomorrow = S.day === 0 && dates()[1] ? (dayZones(dates()[1])[0]?.v ?? 0) : 0;
+    el.innerHTML = head('Hoy ya no', 'no', `Las zonas de hoy tienen el pico antes de que llegues desde ${esc(S.origin.label)}. La más cerca: <b>Zona ${esc(dz.name)}</b>, pico ${hm(p.h)}, ${o.dist} km.`)
+      + `<p class="sub">Si estás cerca de alguna zona, mirá el radar: puede armarse algo más tarde. ${tomorrow >= 45 ? `<b>Mañana hay potencial (${tomorrow})</b>: tocá “Mañana” arriba para ver el plan.` : ''}</p>`;
+    return;
+  }
   const sunset = sunsetHour(t.lat, t.lon, date);
   const start = Math.max(11, p.h - 2); // las tormentas suelen arrancar 1–2 h antes del pico
   const arrive = start - 1; // llegar 1 h antes para esperar tranquilo
   const leave = arrive - drive;
   const night = p.h >= sunset + 0.5;
-  const now = nowArt(), nowH = S.day === 0 && now.date === date ? now.hour : -1;
-  const mdir = t.mdir?.[p.i], mspd = t.mspd?.[p.i];
+  const nd = nowDec(), nowH = nd.date === date ? nd.h : -1;
+  const mdir = o ? o.mdir : t.mdir?.[p.i], mspd = o ? o.mspd : t.mspd?.[p.i];
   const hasMove = mdir != null && mspd != null;
   const from = hasMove ? rumbo(mdir + 180) : 'oeste', to = hasMove ? rumbo(mdir) : 'este';
   const side = hasMove ? rumbo(mdir - 90) : 'norte'; // en el hemisferio sur: lado izquierdo de la trayectoria (entra el aire cálido)
   const hail = hasMove ? rumbo(mdir + 90) : 'sur';
   // 👁 Punto para mirar: al costado del camino de las tormentas, no la ciudad.
-  const vp = dz ? viewpoint(dz, hasMove ? mdir : 90) : null;
-  S.vp = vp ? { ...vp, z: dz } : null;
-  const vdist = vp ? Math.round(km(S.origin, vp)) : dist, vdrive = driveHours(vdist);
-  const vleave = arrive - vdrive;
-  const hit = vp && hasMove ? routeCheck(S.origin, vp, dz, mdir, mspd, vleave, p.h) : null;
-  const safe = hit ? safeLeave(S.origin, vp, dz, mdir, mspd, vleave, p.h) : null;
-  const vpTxt = vp ? `el <b>👁 punto para mirar</b> (${vpSpan(vp)})` : esc(t.name);
+  const vp = o ? o.vp : null;
+  const vdist = o ? o.dist : dist, vdrive = o ? o.drive : drive;
+  const vleave = o ? o.leave : leave;
+  const hit = o ? o.hit : null, safe = o ? o.safe : null;
+  const vpTxt = o ? `${stopTxt(o)} (${vpSpan(vp)})` : esc(t.name);
 
   let badge = 'Vale salir', cls = 'go';
   if (sc < 65) { badge = 'Si estás cerca'; cls = 'maybe'; }
@@ -468,8 +527,8 @@ function renderPlan() {
   if (night) { badge = 'De noche: no'; cls = 'no'; }
 
   let late = '';
-  if (nowH >= 0 && nowH > p.h) late = `<b>El pico ya pasó</b> (${hm(p.h)}). No salgas ahora.`;
-  else if (nowH >= 0 && vdist >= 15 && nowH + 0.25 >= (vp ? vleave : leave)) late = `<b>Si vas, salí ya:</b> llegás a eso de las ${hm(nowH + (vp ? vdrive : drive) + 0.25)}.`;
+  if (o && !o.reachable) late = `<b>No llegás a tiempo</b> a ninguna zona para su pico. Mirá el radar por si se arma algo más cerca.`;
+  else if (o?.late && vdist >= 15) late = `<b>Si vas, salí ya:</b> llegás a eso de las ${hm(o.arriveAt)}.`;
 
   const moveTxt = hasMove
     ? `<b>Hacia dónde van:</b> vienen del <b>${from}</b> y van hacia el <b>${to}</b> a unos <b>${mspd} km/h</b>.${mspd >= 50 ? ' <b>Son rápidas:</b> no las persigas por detrás, dejá que vengan hacia vos.' : ''}`
@@ -481,7 +540,7 @@ function renderPlan() {
   if (S.day === 1) warn.push('Confianza media: revisá el plan mañana a la mañana antes de salir.');
   if (sc < 65) warn.push('Potencial moderado: vale si estás cerca. Lo más probable es ver tormentas fuertes, no tornados.');
   if (late) warn.unshift(late);
-  if (hit) warn.unshift(safe != null
+  if (hit && !o?.late) warn.unshift(safe != null
     ? `<b>Salí a las ${hm(safe)} o antes:</b> más tarde tu camino cruza el paso de las tormentas (cerca de las ${hm(hit.h)}). Si salís después, entrá por el <b>${side}</b>, sin cruzar por delante de ellas.`
     : `<b>Tu camino cruza el paso de las tormentas</b> cerca de las ${hm(hit.h)}: entrá por el <b>${side}</b>, sin cruzar por delante de ellas.`);
   const warnHtml = warn.length ? `<div class="pwarn">${warn.map((w) => `<p>⚠️ ${w}</p>`).join('')}</div>` : '';
@@ -494,7 +553,7 @@ function renderPlan() {
       'Si estás en la zona, quedate en un <b>lugar techado y firme</b> (no en el auto) y seguí el radar y los avisos del SMN.',
       moveTxt,
     ];
-    el.innerHTML = head(badge, cls, `${dz ? `Zona ${esc(dz.name)} · ` : ''}ir hacia <b>${esc(t.name)}</b> · potencial ${sc}`) + warnHtml
+    el.innerHTML = head(badge, cls, `${dz ? `Zona ${esc(dz.name)} · ` : ''}potencial ${sc}`) + warnHtml
       + `<ol class="psteps">${steps.map((x) => `<li>${x}</li>`).join('')}</ol>` + foot;
     return;
   }
@@ -502,11 +561,12 @@ function renderPlan() {
   // Tu día, hora por hora.
   const station = `<a href="${mapsNear('estación de servicio', t)}" target="_blank" rel="noopener">una estación de servicio de ${esc(t.name)}</a>`;
   const rows = [];
-  if (leave >= 11) rows.push(['10:00', 'Mirá el panel: ¿sigue en “Vale salir”? ¿Hay avisos del SMN en la zona?']);
-  if (leave >= 12.5) rows.push(['12:00', 'Decidí si vas. Si el puntaje bajó mucho o el plan cambió de zona, no vayas.']);
-  if (vp) {
-    if (vdist >= 15) rows.push([hm(hit && safe != null ? safe : vleave), `<b>Salí</b> desde ${esc(S.origin.label)} hacia ${vpTxt} (${vdist} km en línea recta, ~${vdrive.toFixed(1)} h). Tanque lleno y celular cargado. Nafta y baño: ${station}.`]);
-    rows.push([hm(arrive), `<b>Llegá al punto</b> y buscá cerca un camino <b>asfaltado</b> con vista abierta hacia el ${from}. ${hit ? '' : '✅ Con este horario el camino no cruza por delante de las tormentas.'}`]);
+  const future = (h) => nowH < 0 || h > nowH; // hoy no mostrar pasos que ya pasaron
+  if (vleave >= 11 && future(10)) rows.push(['10:00', 'Mirá el panel: ¿sigue en “Vale salir”? ¿Hay avisos del SMN en la zona?']);
+  if (vleave >= 12.5 && future(12)) rows.push(['12:00', 'Decidí si vas. Si el puntaje bajó mucho o el plan cambió de zona, no vayas.']);
+  if (o) {
+    if (vdist >= 15) rows.push([o.late ? 'Ahora' : hm(vleave), `<b>Salí</b> desde ${esc(S.origin.label)} hacia ${vpTxt} (${vdist} km en línea recta, ~${vdrive.toFixed(1)} h). Tanque lleno y celular cargado.`]);
+    rows.push([hm(o.arriveAt), `<b>Llegás a la parada.</b> ${o.stop?.kind === 'estación' ? 'Estacioná ahí: nafta, baño y comida.' : `Buscá dónde estacionar: ${station}.`} Desde ahí mirá hacia el ${from}, ojalá con campo abierto. ${hit ? '' : '✅ Con este horario el camino no cruza por delante de las tormentas.'}`]);
   } else {
     if (dist >= 15) rows.push([hm(leave), `<b>Salí</b> desde ${esc(S.origin.label)} hacia ${esc(t.name)} (${dist} km, ~${drive.toFixed(1)} h). Tanque lleno y celular cargado.`]);
     rows.push([hm(arrive), dist >= 15 ? `<b>Llegá</b> a ${station}. Baño, comida y nafta.` : `<b>Estás en la zona:</b> esperá en ${station}. Baño, comida y nafta.`]);
@@ -516,11 +576,11 @@ function renderPlan() {
   rows.push(['Mirando', `Buscá la base oscura y baja, y si gira. Si en el radar se te acerca, movete hacia el <b>${side}</b>.`]);
   rows.push([hm(sunset), '<b>Se pone el sol: volvé</b>, aunque la tormenta siga.']);
 
-  el.innerHTML = head(badge, cls, `${dz ? `Zona ${esc(dz.name)} · potencial ${sc}<br><span class="sub">👁 Punto para mirar: <b>${vpSpan(vp)}</b> · pueblo de referencia ${esc(t.name)}</span>` : `ir hacia <b>${esc(t.name)}</b> · potencial ${sc}`}`) + warnHtml
+  el.innerHTML = head(badge, cls, `${o ? `Zona ${esc(dz.name)} · potencial ${sc} · pico ${hm(p.h)}<br><span class="sub">👁 Parar en ${vpTxt}</span>` : `ir hacia <b>${esc(t.name)}</b> · potencial ${sc}`}`) + warnHtml
     + `<h3 class="ptitle">Tu día, hora por hora</h3>`
     + `<table class="daytable"><tbody>${rows.map(([h, x]) => `<tr><td>${h}</td><td>${x}</td></tr>`).join('')}</tbody></table>`
-    + (vp ? `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, vp)}" target="_blank" rel="noopener">Ruta al 👁 punto para mirar →</a> <button class="chip" id="vpshow">Ver en el mapa</button></div>
-        <p class="muted">El punto es aproximado: queda a ~${Math.round(km(vp, dz.ctr))} km del centro de la zona, del lado <b>${side}</b>. Antes de llegar fijate en el radar que la tormenta no esté ya ahí.</p>`
+    + (vp ? `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, vp)}" target="_blank" rel="noopener">Ruta a la parada →</a> <button class="chip optshow" data-k="0">Ver en el mapa</button></div>
+        <p class="muted">La parada queda a ~${Math.round(km(vp, dz.ctr))} km del centro de la zona, del lado <b>${side}</b>. Otras opciones: en “Dónde ir”. Antes de llegar fijate en el radar que la tormenta no esté ya ahí.</p>`
       : (dist < 15 ? '' : `<div class="pbtns"><a class="go" href="${mapsDir(S.origin, t)}" target="_blank" rel="noopener">Ruta a ${esc(t.name)} →</a></div>`))
     + `<h3 class="ptitle">Dónde pararte</h3>
       <div class="dwrap">${stormDiagram(hasMove ? mdir : 100)}
@@ -533,7 +593,6 @@ function renderPlan() {
           ${hasMove ? '' : '<li class="muted">Sin dato de movimiento: el dibujo usa la dirección típica.</li>'}
         </ul>
       </div>`
-    + otherOptions(S.opts.slice(1))
     + `<div class="pcols">
         <div><h3>Llevá</h3><ul><li>Tanque lleno y celular cargado (cargador en el auto)</li><li>Mapas de la zona descargados sin conexión</li><li>Agua, algo para comer y un acompañante</li></ul></div>
         <div><h3>Volvé si…</h3><ul><li>Empieza a caer granizo o no ves nada por la lluvia</li><li>El SMN emite aviso a muy corto plazo justo donde estás</li><li>Se hace de noche o la ruta se inunda</li></ul></div>
@@ -702,11 +761,6 @@ function renderWrf() {
 /* ---------------- Zonas de caza ---------------- */
 // Círculo alrededor de la zona con más potencial (y una segunda si está lejos de la primera).
 const zoneLayer = L.layerGroup().addTo(map);
-function huntZones() {
-  const date = curDate();
-  const cells = S.data.grid.pts.map(([lat, lon], k) => { const { v, i } = pick(S.data.grid.score[k], date); return { lat, lon, v, i }; });
-  return findZones(cells, S.data.towns, 4);
-}
 function renderZones() {
   zoneLayer.clearLayers();
   if (!S.layers.zonas) return;
