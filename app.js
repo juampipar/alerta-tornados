@@ -212,6 +212,7 @@ function renderHero(rank) {
       <a class="go" href="${dirLink(b.t.lat, b.t.lon)}" target="_blank" rel="noopener">Cómo llegar →</a>
     </div>
     <div class="metrics">${metricsHtml(b)}</div>
+    <p class="mlegend"><span class="sw sw-good">rojo</span> favorece tornados · <span class="sw sw-mid">naranja</span> a medias · <span class="sw sw-low">gris</span> no ayuda · <a href="#guia">Guía: cómo leerlo y qué hacer ↓</a></p>
     <details class="how"><summary>¿Cómo se calcula el puntaje?</summary><ul>
       <li><b>Energía × viento:</b> se multiplican. Sin CAPE no hay tormenta por más viento que haya; sin cizalladura la tormenta no se organiza ni rota.</li>
       <li><b>Cizalladura 0–6 km</b> (≥20 m/s ideal) organiza supercélulas. Con menos de 15 m/s el puntaje no pasa de Moderado, y con menos de 10 m/s no pasa de Bajo, por más CAPE que haya.</li>

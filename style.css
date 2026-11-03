@@ -158,3 +158,14 @@ footer p { margin: 4px 0; }
 .conf-alta { color: #3ddc97; } .conf-media { color: #ffd43b; } .conf-baja { color: #ff8c1a; }
 .conftxt { font-size: .8rem; margin-top: 4px; }
 .cdot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-left: 6px; vertical-align: middle; background: currentColor; }
+
+/* Leyenda de colores y guía */
+.mlegend { grid-column: 1 / -1; margin: 0; font-size: .8rem; color: var(--mut); }
+.mlegend a { color: var(--ac); }
+.sw { font-weight: 700; }
+.sw-good { color: #ff7a90; } .sw-mid { color: var(--orange); } .sw-low { color: var(--mut); }
+.gtable { width: 100%; border-collapse: collapse; font-size: .82rem; margin: 10px 0; }
+.gtable th, .gtable td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.gtable th { color: var(--mut); font-weight: 600; font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
+.gtable td:last-child { white-space: nowrap; }
+@media (min-width: 900px) { .guide > article:first-child { grid-column: span 2; } }
