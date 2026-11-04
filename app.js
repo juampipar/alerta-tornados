@@ -808,6 +808,7 @@ async function loadSmn() {
 function showTab(t) {
   $$('#tabs button[data-t]').forEach((x) => x.classList.toggle('on', x.dataset.t === t));
   for (const k of ['map', 'windy']) $('#tab-' + k).hidden = k !== t;
+  if (t === 'windy') setWindy();
   $('#layers').style.visibility = $('#timebar').style.visibility = t === 'map' ? 'visible' : 'hidden';
   if (t === 'map') map.invalidateSize();
 }
@@ -893,13 +894,30 @@ function renderZones() {
 
 loadForecast(); loadSmn(); loadRadar(); loadWrf();
 
-// Pestaña Windy: CAPE o radar (Windy tiene acceso a los radares del SMN).
-$$('#windysw button').forEach((b) => (b.onclick = () => {
-  $$('#windysw button').forEach((x) => x.classList.toggle('on', x === b));
-  const f = $('#windyframe'), o = b.dataset.o;
-  f.src = f.src.replace(/overlay=\w+/, 'overlay=' + o).replace(/zoom=\d+/, 'zoom=' + (o === 'radar' ? 7 : 6));
-  $('#windyopen').href = `https://www.windy.com/-32.660/-62.300?${o},-32.660,-62.300,7`;
-}));
+// Pestaña Windy: radar ahora (incluye los radares del SMN), tormentas pronosticadas o CAPE,
+// centrado en tu zona de caza (opción 1) si hay una; si no, en Leones.
+const WINDY_HINT = {
+  radar: 'Lo que llueve <b>ahora</b> (última hora). Tocá ▶ abajo para ver hacia dónde se mueve. Para lo que viene, tocá “Tormentas próximas horas”.',
+  rain: '<b>Pronóstico</b> de lluvia y tormentas (⚡ = tormenta). Mové la barra de abajo para ver las próximas horas: donde aparezcan manchas fuertes y ⚡ cerca de tu zona, ahí se esperan.',
+  cape: 'Energía para tormentas (pronóstico). Mové la barra de abajo para ver las horas.',
+};
+let windyO = 'radar';
+function windyCenter() {
+  const z = S.opts?.[0]?.z?.ctr;
+  return z ? { lat: z.lat.toFixed(2), lon: z.lon.toFixed(2) } : { lat: '-32.66', lon: '-62.30' };
+}
+function setWindy(o = windyO) {
+  windyO = o;
+  $$('#windysw button').forEach((x) => x.classList.toggle('on', x.dataset.o === o));
+  const f = $('#windyframe'), c = windyCenter(), zoom = o === 'radar' ? 7 : 6;
+  const src = f.src.replace(/overlay=\w+/, 'overlay=' + o).replace(/zoom=\d+/, 'zoom=' + zoom)
+    .replace(/([?&])lat=[-\d.]+/, `$1lat=${c.lat}`).replace(/([?&])lon=[-\d.]+/, `$1lon=${c.lon}`)
+    .replace(/detailLat=[-\d.]+/, `detailLat=${c.lat}`).replace(/detailLon=[-\d.]+/, `detailLon=${c.lon}`);
+  if (src !== f.src) f.src = src;
+  $('#windyopen').href = `https://www.windy.com/${c.lat}/${c.lon}?${o},${c.lat},${c.lon},${zoom}`;
+  $('#windyhint').innerHTML = WINDY_HINT[o] + (S.opts?.[0] ? ` · Centrado en tu zona: <b>${esc(S.opts[0].z.name)}</b> (punto).` : '');
+}
+$$('#windysw button').forEach((b) => (b.onclick = () => setWindy(b.dataset.o)));
 setInterval(loadRadar, 5 * 60e3);
 setInterval(() => { loadSmn(); loadNowcast(); }, 10 * 60e3);
 setInterval(renderNowcast, 60e3); // la posición estimada avanza minuto a minuto
