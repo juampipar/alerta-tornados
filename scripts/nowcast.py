@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 import netCDF4
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 
 OUT = os.path.join(sys.argv[1] if len(sys.argv) > 1 else '_site', 'data')
@@ -166,10 +167,11 @@ def cells_of(key):
             'km2_bajo_-52C': round(float(area[ys, xs][near & (b < 221)].sum())),
             'km2_bajo_-63C': round(float(area[ys, xs][near & (b < 210)].sum())),
             'topes_sobresalientes': int(ot[ys, xs][near & (dist <= 25)].sum()),
+            'iy': int(y), 'ix': int(x),
         })
         if len(cores) >= 40:
             break
-    return cores
+    return cores, (btf, lat, lon, px)
 
 
 def move(p, deg, d):
@@ -211,13 +213,88 @@ def blend(own, steer):
     return None, None, None
 
 
+FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+
+
+def fnt(size):
+    try:
+        return ImageFont.truetype(FONT, size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def enhanced_ir(c):
+    """Colores tipo 'infrarrojo realzado' (como usan los meteorólogos): resalta los topes más fríos."""
+    rgb = np.zeros(c.shape + (3,), np.uint8)
+    g = np.clip((30 - c) / 60 * 200 + 30, 30, 230).astype(np.uint8)  # cálido: gris
+    rgb[..., 0] = rgb[..., 1] = rgb[..., 2] = g
+    for lo, hi, col in [(-40, -30, (0, 190, 220)), (-52, -40, (30, 90, 230)), (-58, -52, (40, 200, 70)),
+                        (-63, -58, (250, 230, 40)), (-70, -63, (255, 120, 20)), (-75, -70, (230, 20, 40)),
+                        (-80, -75, (220, 40, 220)), (-200, -80, (255, 255, 255))]:
+        rgb[(c < hi) & (c >= lo)] = col
+    return rgb
+
+
+def make_zooms(cells, grid, t1, max_n=4):
+    """Recorte de ~300 km alrededor de las tormentas más fuertes, ampliado, para que la IA (y vos) vean la forma."""
+    btf, lat, lon, px = grid
+    img_dir = os.path.join(OUT, 'img')
+    os.makedirs(img_dir, exist_ok=True)
+    for f in os.listdir(img_dir):
+        if f.startswith('nucleo_'):
+            os.remove(os.path.join(img_dir, f))
+    strong = [c for c in cells if c['fuerza'] != 'moderada' or c['topes_sobresalientes']]
+    # Las más frías, más la fuerte más cercana a Leones.
+    pick = strong[:max_n - 1]
+    near = min((c for c in strong if c not in pick), key=lambda c: c['km_de_leones'], default=None)
+    if near:
+        pick.append(near)
+    out = []
+    r = int(round(150 / px))
+    for k, c in enumerate(pick, start=1):
+        iy, ix = c['_iy'], c['_ix']
+        y0, x0 = max(0, iy - r), max(0, ix - r)
+        sub = btf[y0:iy + r + 1, x0:ix + r + 1] - 273.15
+        z = 4
+        im = Image.fromarray(enhanced_ir(sub)).resize((sub.shape[1] * z, sub.shape[0] * z), Image.NEAREST)
+        d = ImageDraw.Draw(im)
+        cx, cy = (ix - x0) * z + z // 2, (iy - y0) * z + z // 2
+        d.line([(cx - 14, cy), (cx - 5, cy)], fill=(0, 0, 0), width=3)
+        d.line([(cx + 5, cy), (cx + 14, cy)], fill=(0, 0, 0), width=3)
+        d.line([(cx, cy - 14), (cx, cy - 5)], fill=(0, 0, 0), width=3)
+        d.line([(cx, cy + 5), (cx, cy + 14)], fill=(0, 0, 0), width=3)
+        # Pueblos dentro del recorte.
+        la, lo = lat[y0:iy + r + 1, x0:ix + r + 1], lon[y0:iy + r + 1, x0:ix + r + 1]
+        for name, tla, tlo in TOWNS:
+            dd = (la - tla) ** 2 + ((lo - tlo) * math.cos(math.radians(tla))) ** 2
+            j = np.unravel_index(np.nanargmin(dd), dd.shape)
+            if dd[j] < (px / 111.2) ** 2 * 2:
+                X, Y = j[1] * z, j[0] * z
+                col = (80, 200, 255) if name == 'Leones' else (255, 255, 255)
+                d.ellipse([X - 4, Y - 4, X + 4, Y + 4], fill=col, outline=(0, 0, 0))
+                d.text((X + 6, Y - 9), name, fill=col, font=fnt(15), stroke_width=2, stroke_fill=(0, 0, 0))
+        # Escala de 25 km y título.
+        bar = 25 / px * z
+        d.rectangle([10, im.height - 26, 10 + bar, im.height - 20], fill=(255, 255, 255), outline=(0, 0, 0))
+        d.text((14 + bar, im.height - 32), '25 km', fill=(255, 255, 255), font=fnt(13), stroke_width=2, stroke_fill=(0, 0, 0))
+        title = f"Tormenta {k}: {c['cerca_de']} · tope {c['tope_min_C']} °C · {c['tendencia']}" + (f" · {c['topes_sobresalientes']} topes que sobresalen" if c['topes_sobresalientes'] else '')
+        d.rectangle([0, 0, im.width, 24], fill=(0, 0, 0))
+        d.text((6, 4), title, fill=(255, 255, 255), font=fnt(14))
+        d.text((6, 26), f"GOES-19 IR realzado {t1.astimezone(ART):%H:%M} h · blanco/magenta = < −75 °C, rojo < −70, naranja < −63", fill=(255, 255, 255), font=fnt(12), stroke_width=2, stroke_fill=(0, 0, 0))
+        name = f'nucleo_{k}.png'
+        im.save(os.path.join(img_dir, name), optimize=True)
+        c['imagen'] = f'img/{name}'
+        out.append({'archivo': name, 'que_es': f"zoom satélite alta resolución, tormenta {k} ({c['cerca_de']})", 'hora': t1.astimezone(ART).strftime('%H:%M')})
+    return out
+
+
 def main():
     # NOWCAST_AT=2026-11-03T21:40 permite revisar un momento pasado (pruebas).
     at = os.environ.get('NOWCAST_AT')
     now = datetime.fromisoformat(at).replace(tzinfo=timezone.utc) if at else datetime.now(timezone.utc)
     (t1, k1), prev = pick_frames(now)
-    c1 = cells_of(k1)
-    c0 = cells_of(prev[1]) if prev else []
+    c1, grid = cells_of(k1)
+    c0 = cells_of(prev[1])[0] if prev else []
     dt_h = (t1 - prev[0]).total_seconds() / 3600 if prev else None
     steer = steering_fn(t1)
     t_valid = t1 + timedelta(minutes=5)  # la imagen se escanea en ~10 min: tomamos la mitad
@@ -258,8 +335,10 @@ def main():
             'kmh': round(kmh) if kmh else None,
             'mov_deg': round(mdeg) if mdeg is not None else None, 'mov_fuente': fuente,
             'cambio_tope_C': round(c['tope_min_K'] - m['tope_min_K'], 1) if m else None,  # negativo = se enfría = se intensifica
+            '_iy': c['iy'], '_ix': c['ix'],
         })
     cells.sort(key=lambda c: (c['tope_min_C'], -c['area_km2']))
+    zooms = make_zooms(cells, grid, t1)
     res = {
         'satelite': 'GOES-19 banda 13 (infrarrojo 10,3 µm)', 'hora': t1.astimezone(ART).strftime('%H:%M'),
         'hora_anterior': prev[0].astimezone(ART).strftime('%H:%M') if prev else None,
@@ -270,9 +349,17 @@ def main():
                      '"nueva" = no estaba en la imagen anterior; "creciendo" = se agrandó o se enfrió. "cambio_tope_C" negativo = se intensifica. '
                      'El movimiento (va_hacia/kmh/mov_deg) combina el del satélite con el del pronóstico; '
                      'con él se estima la posición actual (lat/lon son de la hora del satélite).',
-        'celulas': cells[:25],
+        'celulas': [{k: v for k, v in c.items() if not k.startswith('_')} for c in cells[:25]],
     }
     json.dump(res, open(os.path.join(OUT, 'nowcast.json'), 'w'), ensure_ascii=False)
+    # Sumar los zooms a la lista de imágenes para la IA.
+    try:
+        mp = os.path.join(OUT, 'img', 'meta.json')
+        meta = json.load(open(mp)) if os.path.exists(mp) else {'imagenes': []}
+        meta['imagenes'] = [x for x in meta['imagenes'] if not x['archivo'].startswith('nucleo_')] + zooms
+        json.dump(meta, open(mp, 'w'), ensure_ascii=False)
+    except Exception as e:
+        print('nowcast: no pude anotar los zooms:', e)
     print(f"nowcast: {len(cells)} núcleos ({res['hora_anterior']} → {res['hora']})")
     for c in cells[:6]:
         print(f"  {c['fuerza']:10} {c['tope_min_C']:4}°C {c['area_km2']:6} km² OT={c['topes_sobresalientes']} {c['tendencia']:13} {c['va_hacia'] or '-':9} {c['kmh'] or '-':>4} km/h · {c['cerca_de']} · {c['km_de_leones']} km de Leones")

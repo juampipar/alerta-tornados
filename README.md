@@ -15,6 +15,29 @@ Publicado en https://juampipar.github.io/alerta-tornados/
 - **Ranking "Dónde ir"** con distancia y tiempo desde Leones o desde tu ubicación (GPS), curva del día y botón a Google Maps.
 - Pestaña de Windy (CAPE) y link a rayos en vivo (LightningMaps no permite insertarse). Instalable en el celular (“Agregar a pantalla de inicio”).
 
+## Cómo funciona el sistema completo
+Todo corre gratis en **GitHub Actions** (workflow `Publicar panel`, cada ~10–20 min) y se publica en **GitHub Pages**.
+
+| Paso | Script | Fuente | Qué produce |
+|---|---|---|---|
+| 1. Pronóstico | `build-data.mjs` | Open-Meteo (modelos globales), cada 2 h | `forecast.json`: potencial 0–100 por pueblo y grilla, ingredientes, movimiento de tormentas |
+| 2. Avisos oficiales | `build-data.mjs` | SMN (CAP), cada corrida | `smn.json`: avisos, incluidos los de muy corto plazo |
+| 3. Lluvia del modelo SMN | `build-wrf.py` | WRF 4 km del SMN (AWS), 4 corridas/día | `wrf/*.png`: lluvia pronosticada hora por hora |
+| 4. Tormentas en vivo | `nowcast.py` | Satélite GOES-19 banda 13 (NOAA, AWS), cada 10 min | `nowcast.json`: núcleos de tormenta (tope, topes que sobresalen, si crecen, movimiento) + zooms `img/nucleo_*.png` |
+| 5. Imágenes para la IA | `build-images.py` | GOES (NASA GIBS) + WRF | `img/*.png`: satélite ahora y hace 1 h, visible, lluvia del modelo, con pueblos y avisos dibujados |
+| 6. Decisión y avisos | `alert.mjs` | todo lo anterior + Telegram + OpenStreetMap + Gemini | `brief.json` (resumen para IA) y mensajes de Telegram |
+
+**Cómo decide:**
+- **Zonas de caza** (`lib/risk.mjs`): áreas con más potencial; opciones ordenadas por las que llegás a tiempo; 👁 parada en una estación de servicio (OpenStreetMap) al costado del camino de las tormentas; chequeo de si tu ruta cruza su paso.
+- **Tormentas ahora**: el satélite llega con 10–30 min de atraso; cada núcleo se **adelanta** con su movimiento (satélite + pronóstico) para estimar dónde está ahora y en +30/+60 min.
+- **IA (Gemini)**: recibe `brief.json` + las imágenes (incluidos los zooms de alta resolución) y escribe "🤖 Qué haría yo", con reglas de seguridad fijas.
+
+**Mensajes de Telegram:** 🌪️ Día de caza · 🚨 ¡Ya se están formando! (SMN) · 🎯 Modo caza (con tu ubicación en tiempo real: ⚠️ tormenta cerca / 🛰️ se está formando, + zoom del satélite) · 🤖 Qué haría yo.
+
+**Probar con un momento pasado:** Actions → Publicar panel → Run workflow → `repetir` = hora UTC (ej. `2026-11-03T21:40`). Simula el modo caza desde Leones con el satélite de ese momento, manda los mensajes y no publica el panel.
+
+**Límites:** no hay radar de velocidad (el SMN no lo publica): el gancho y el giro no se ven; el satélite muestra topes fríos y topes que sobresalen (señales de supercelda), no tornados. Las posiciones estimadas y los movimientos son aproximados.
+
 ## Cómo se actualiza
 El workflow `Publicar panel` corre **cada 10 minutos** (y en cada push a `main`). El pronóstico se recalcula cada 2 horas (cuota gratuita de Open-Meteo); en las otras corridas solo se renuevan los avisos del SMN (los de muy corto plazo duran 1–2 h): `scripts/build-data.mjs` baja el pronóstico de Open-Meteo y los avisos del SMN, genera `data/forecast.json` y `data/smn.json`, y publica en GitHub Pages. Si el archivo de pronóstico falta o es viejo, el panel lo pide directo a Open-Meteo.
 

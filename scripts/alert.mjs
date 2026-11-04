@@ -48,6 +48,9 @@ state.smn ??= {}; state.days ??= {};
 // v2: los puntajes guardados antes eran de la zona mal calculada (sobre el río o Uruguay): se olvidan.
 if (state.v !== 2) { state.days = {}; state.v = 2; }
 const messages = [];
+// REPLAY_AT=2026-11-03T21:40 (UTC): repite ese momento en modo caza desde Leones, para probar (no toca el estado).
+const REPLAY = env.REPLAY_AT ? Date.parse(env.REPLAY_AT.endsWith('Z') ? env.REPLAY_AT : env.REPLAY_AT + 'Z') : null;
+const NOW = REPLAY ? REPLAY + 15 * 60e3 : Date.now(); // en vivo el satélite llega con ~15 min de atraso: se simula igual
 const test = !!env.TEST;
 const quiet = nowMin >= 23 * 60 || nowMin < 7 * 60;
 
@@ -271,7 +274,7 @@ async function buildBrief() {
         const r3 = (p) => ({ lat: +p.lat.toFixed(2), lon: +p.lon.toFixed(2) });
         return { hora: n.hora, hora_anterior: n.hora_anterior, como_leer: n.como_leer, nucleos: n.celulas.slice(0, 12).map((c) => {
           if (!n.hora_utc || c.mov_deg == null || !c.kmh) return c;
-          const now = coreAt(c, n.hora_utc);
+          const now = coreAt(c, n.hora_utc, NOW);
           return { ...c, ahora_estimado: r3(now), en_30_min: r3(movePoint(now, c.mov_deg, c.kmh / 2)), en_60_min: r3(movePoint(now, c.mov_deg, c.kmh)), atraso_min: Math.round(now.edadMin) };
         }) };
       } catch { return null; }
@@ -315,6 +318,10 @@ pueblos marcados, LEONES (la base, rombo celeste) y los avisos a corto plazo del
   Compará las dos: ¿qué núcleos son NUEVOS o CRECIERON (se formaron en la última hora)? ¿hacia dónde se movieron? ¿están aislados o en línea?
 - "Satélite visible" (de día): torres de cúmulos y yunques blancos; campos de cúmulos que se organizan en línea indican dónde nace la convección.
 - "Lluvia pronosticada por el modelo SMN" +1 h y +3 h: dónde el modelo espera tormentas pronto.
+- "zoom satélite alta resolución, tormenta N": recorte de ~300 km en infrarrojo realzado (cruz negra = núcleo; colores: celeste/azul
+  −30/−52 °C, verde −52/−58, amarillo −58/−63, naranja −63/−70, rojo −70/−75, magenta/blanco < −75). Buscá señales de supercelda:
+  un punto mucho más frío y aislado (tope que sobresale), una "V" o "U" fría abierta hacia atrás del movimiento (enhanced-V / cold-U),
+  un anillo frío, y si el núcleo está aislado o metido en una línea. El gancho de radar NO se ve en satélite: no lo menciones como visto.
 Usá las imágenes para decir DÓNDE se está formando algo ahora (cerca de qué pueblo), si crece, hacia dónde va y si conviene
 moverse para quedar de costado. Si las imágenes no muestran nada importante cerca, decilo. No inventes lo que no se ve.`;
 
@@ -383,12 +390,15 @@ async function readTelegram() {
     }
   } catch (e) { console.error('Telegram (lectura) falló:', e.message); }
 }
-await readTelegram();
+if (REPLAY) {
+  messages.length = 0; // solo el modo caza
+  state.chase = { on: true, since: NOW, loc: { lat: HOME.lat, lon: HOME.lon, t: NOW }, force: true, seen: {}, lastMsg: 0 };
+} else await readTelegram();
 
 const ANG = { norte: 0, noreste: 45, este: 90, sudeste: 135, sur: 180, sudoeste: 225, oeste: 270, noroeste: 315 };
 if (state.chase.on) {
   const loc = state.chase.loc;
-  const stale = loc && Date.now() - loc.t > 90 * 60e3;
+  const stale = loc && NOW - loc.t > 90 * 60e3;
   if (stale || (!loc && Date.now() - (state.chase.since ?? 0) > 3 * 3600e3)) {
     state.chase.on = false;
     chaseOut.push('🏁 <b>Modo caza apagado</b>: hace rato que no recibo tu ubicación. Mandá /caza o compartí la ubicación para volver a prenderlo.');
@@ -404,10 +414,10 @@ if (state.chase.on && state.chase.loc) {
   const me = state.chase.loc;
   let nc = null;
   try { nc = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8')); } catch { /* sin satélite */ }
-  const ncFresh = nc?.hora_utc && Date.now() - Date.parse(nc.hora_utc) < 90 * 60e3; // sin dato reciente, no avisar
+  const ncFresh = nc?.hora_utc && NOW - Date.parse(nc.hora_utc) < 90 * 60e3; // sin dato reciente, no avisar
   const cores = (ncFresh ? nc.celulas : []).map((c0) => {
     // Posición estimada AHORA (el satélite llega con 10–30 min de atraso).
-    const est = nc.hora_utc ? coreAt(c0, nc.hora_utc) : { lat: c0.lat, lon: c0.lon, edadMin: 0 };
+    const est = nc.hora_utc ? coreAt(c0, nc.hora_utc, NOW) : { lat: c0.lat, lon: c0.lon, edadMin: 0 };
     const c = { ...c0, lat: est.lat, lon: est.lon, edadMin: Math.round(est.edadMin) };
     const d = Math.round(km(me, c)), toMe = bearing(c, me);
     const mv = c.mov_deg ?? (c.va_hacia ? ANG[c.va_hacia] : null);
@@ -422,7 +432,7 @@ if (state.chase.on && state.chase.loc) {
   const danger = cores.find((c) => c.d <= 20 || (c.coming != null && c.coming <= 40 && c.d <= 50));
   const acp = (smn?.alerts ?? []).filter((a) => a.shortTerm && distTo(a, me) <= 60 && !state.chase.seen['acp:' + a.id]);
   const since = Date.now() - (state.chase.lastMsg ?? 0);
-  if (danger && since > 10 * 60e3) chaseEvent = { tipo: 'cerca', cores: [danger, ...news.slice(0, 2)] };
+  if (danger && since > 10 * 60e3) chaseEvent = { tipo: 'cerca', cores: [danger, ...news.filter((c) => c !== danger).slice(0, 2)] };
   else if ((news.length || acp.length) && since > 20 * 60e3) chaseEvent = { tipo: 'novedad', cores: news.slice(0, 3), acp };
   else if (state.chase.force) chaseEvent = { tipo: 'estado', cores: cores.slice(0, 3) };
   state.chase.force = false;
@@ -439,6 +449,9 @@ if (state.chase.on && state.chase.loc) {
       ...(chaseEvent.acp ?? []).map((a) => `• 🚨 Aviso SMN: ${esc(a.event || a.headline)} a ${Math.round(distTo(a, me))} km`),
       `<a href="${PANEL}">📡 Radar y mapa</a>`,
     ].join('\n'));
+    // Zoom del satélite de la tormenta principal (la misma imagen que analiza la IA).
+    const z = chaseEvent.cores.find((c) => c.imagen);
+    if (z) chaseOut.push({ photo: `${dir}/${z.imagen}`, caption: `🛰️ Zoom satélite: ${esc(z.cerca_de)} · tope ${z.tope_min_C} °C${z.topes_sobresalientes ? ` · ⚡ ${z.topes_sobresalientes} topes que sobresalen` : ''}. Blanco/magenta/rojo = topes más fríos (corriente ascendente fuerte).` });
   }
 }
 for (const m of chaseOut) messages.push(m);
@@ -446,7 +459,12 @@ for (const m of chaseOut) messages.push(m);
 let brief = null;
 if (data) {
   brief = await buildBrief();
-  await writeFile(`${dir}/brief.json`, JSON.stringify(brief, null, 1));
+  if (REPLAY) {
+    brief.hora_argentina = new Date(NOW - 3 * 3600e3).toISOString().slice(11, 16);
+    brief.dias = []; brief.avisos_smn_corto_plazo = [];
+    brief.nota = 'REPETICIÓN de un momento pasado para probar el modo caza. Usá solo nucleos_satelite, vos e imágenes.';
+  }
+  if (!REPLAY) await writeFile(`${dir}/brief.json`, JSON.stringify(brief, null, 1));
 }
 if (brief && messages.length && !(chaseOut.length && !chaseEvent && messages.length === chaseOut.length)) {
   const focus = chaseEvent ? `MODO CAZA: el usuario está en la ruta (ver "vos"). Decile exactamente qué hacer ahora con las tormentas detectadas por satélite (${chaseEvent.tipo === 'cerca' ? 'hay una tormenta cerca: priorizá su seguridad' : 'hay tormentas nuevas o creciendo'}): quedarse, o moverse (rumbo y km) para quedar de costado y adelante de la mejor, a ~20 km.`
@@ -457,23 +475,39 @@ if (brief && messages.length && !(chaseOut.length && !chaseEvent && messages.len
 }
 
 /* ---------- Envío ---------- */
-console.log(messages.length ? messages.join('\n\n———\n\n') : `Nada para avisar (umbral ${MIN}, ${clock(nowMin)} h).`);
+console.log(messages.length ? messages.map((m) => (typeof m === 'object' ? `[foto ${m.photo}] ${m.caption}` : m)).join('\n\n———\n\n') : `Nada para avisar (umbral ${MIN}, ${clock(nowMin)} h).`);
 const { TELEGRAM_BOT_TOKEN: token, TELEGRAM_CHAT_ID: chat } = env;
-if (!messages.length || env.DRY_RUN) { await writeFile(STATE, JSON.stringify(state)); process.exit(0); }
+if (REPLAY && messages.length) {
+  const when = new Date(NOW - 3 * 3600e3).toISOString().replace('T', ' ').slice(0, 16);
+  messages.unshift(`🔁 <b>REPETICIÓN DE PRUEBA</b> · ${when} h (no es en vivo)\nAsí te hubiera llegado el modo caza estando en Leones.`);
+}
+if (!messages.length || env.DRY_RUN) { if (!REPLAY) await writeFile(STATE, JSON.stringify(state)); process.exit(0); }
 if (!token || !chat) {
   // Sin configurar todavía: no falla el workflow y no marca nada como enviado.
   console.log('Faltan los secretos TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID: no se envía.');
   process.exit(0);
 }
 let ok = true;
-for (const text of messages) {
-  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: chat, text, parse_mode: 'HTML', disable_web_page_preview: true }),
-  });
+for (const m of messages) {
+  let r;
+  if (typeof m === 'object' && m.photo) {
+    try {
+      const fd = new FormData();
+      fd.append('chat_id', String(chat));
+      fd.append('caption', m.caption);
+      fd.append('parse_mode', 'HTML');
+      fd.append('photo', new Blob([await readFile(m.photo)], { type: 'image/png' }), 'zoom.png');
+      r = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: fd });
+    } catch (e) { console.error('Telegram (foto) falló:', e.message); continue; }
+  } else {
+    r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text: m, parse_mode: 'HTML', disable_web_page_preview: true }),
+    });
+  }
   if (!r.ok) { ok = false; console.error('Telegram error', r.status, await r.text()); }
 }
-if (ok) await writeFile(STATE, JSON.stringify(state)); // si falló, reintenta en la próxima hora
+if (ok && !REPLAY) await writeFile(STATE, JSON.stringify(state)); // si falló, reintenta en la próxima hora
 else process.exit(1);
 console.log(`Enviado: ${messages.length} mensaje(s).`);
