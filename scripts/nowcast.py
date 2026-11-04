@@ -172,6 +172,45 @@ def cells_of(key):
     return cores
 
 
+def move(p, deg, d):
+    r = math.radians(deg)
+    return (p[0] + d * math.cos(r) / 111.2, p[1] + d * math.sin(r) / (111.2 * math.cos(math.radians(p[0]))))
+
+
+def steering_fn(t):
+    """Movimiento de las tormentas según el pronóstico (Bunkers) en el pueblo más cercano, a la hora `t`."""
+    try:
+        f = json.load(open(os.path.join(OUT, 'forecast.json')))
+        key = t.astimezone(ART).strftime('%Y-%m-%dT%H:00')
+        i = f['times'].index(key) if key in f['times'] else None
+        towns = [x for x in f['towns'] if x.get('mdir') and i is not None and x['mdir'][i] is not None and x['mspd'][i]]
+    except Exception:
+        towns = []
+
+    def fn(p):
+        if not towns:
+            return None
+        t0 = min(towns, key=lambda x: km(p, (x['lat'], x['lon'])))
+        return float(t0['mdir'][i]), float(t0['mspd'][i])
+    return fn
+
+
+def blend(own, steer):
+    """Dirección y velocidad finales: la del satélite si coincide con el pronóstico; si no, la del pronóstico."""
+    if own and steer:
+        diff = abs((own[0] - steer[0] + 540) % 360 - 180)
+        if diff <= 60 and 0.4 * steer[1] <= own[1] <= 2 * steer[1] + 20:
+            ang = math.degrees(math.atan2(0.6 * math.sin(math.radians(own[0])) + 0.4 * math.sin(math.radians(steer[0])),
+                                          0.6 * math.cos(math.radians(own[0])) + 0.4 * math.cos(math.radians(steer[0]))))
+            return (ang + 360) % 360, 0.6 * own[1] + 0.4 * steer[1], 'satélite + pronóstico'
+        return steer[0], steer[1], 'pronóstico'
+    if steer:
+        return steer[0], steer[1], 'pronóstico'
+    if own:
+        return own[0], own[1], 'satélite'
+    return None, None, None
+
+
 def main():
     # NOWCAST_AT=2026-11-03T21:40 permite revisar un momento pasado (pruebas).
     at = os.environ.get('NOWCAST_AT')
@@ -180,6 +219,8 @@ def main():
     c1 = cells_of(k1)
     c0 = cells_of(prev[1]) if prev else []
     dt_h = (t1 - prev[0]).total_seconds() / 3600 if prev else None
+    steer = steering_fn(t1)
+    t_valid = t1 + timedelta(minutes=5)  # la imagen se escanea en ~10 min: tomamos la mitad
     cells = []
     for c in c1:
         p = (c['lat'], c['lon'])
@@ -205,6 +246,7 @@ def main():
                 mov, spd = None, None
         else:
             tend, mov, spd = 'nueva', None, None
+        mdeg, kmh, fuente = blend((mov, spd) if mov is not None and spd and spd >= 10 else None, steer(p))
         cells.append({
             'lat': round(c['lat'], 2), 'lon': round(c['lon'], 2),
             'cerca_de': town[0] if dt < 25 else f"{round(dt)} km al {rumbo(bearing((town[1], town[2]), p))} de {town[0]}",
@@ -212,19 +254,22 @@ def main():
             'area_km2': c['area_km2'], 'tope_min_C': round(tmin), 'fuerza': fuerza,
             'km2_bajo_-52C': c['km2_bajo_-52C'], 'km2_bajo_-63C': c['km2_bajo_-63C'],
             'topes_sobresalientes': c['topes_sobresalientes'], 'tendencia': tend,
-            'va_hacia': rumbo(mov) if mov is not None and spd and spd >= 10 else None,
-            'kmh': round(spd) if spd and spd >= 10 else None,
+            'va_hacia': rumbo(mdeg) if mdeg is not None else None,
+            'kmh': round(kmh) if kmh else None,
+            'mov_deg': round(mdeg) if mdeg is not None else None, 'mov_fuente': fuente,
             'cambio_tope_C': round(c['tope_min_K'] - m['tope_min_K'], 1) if m else None,  # negativo = se enfría = se intensifica
         })
     cells.sort(key=lambda c: (c['tope_min_C'], -c['area_km2']))
     res = {
         'satelite': 'GOES-19 banda 13 (infrarrojo 10,3 µm)', 'hora': t1.astimezone(ART).strftime('%H:%M'),
         'hora_anterior': prev[0].astimezone(ART).strftime('%H:%M') if prev else None,
+        'hora_utc': t_valid.strftime('%Y-%m-%dT%H:%M:%SZ'),
         'como_leer': 'Núcleos = puntos más fríos de cada tormenta (corriente ascendente), con datos en 30 km alrededor; '
                      'area_km2 = nube < −38 °C en ese radio. Más frío = más fuerte (< −52 °C fuerte, < −63 °C muy fuerte). '
                      '"topes_sobresalientes" > 0 = la corriente ascendente perfora el yunque: señal típica de supercelda. '
                      '"nueva" = no estaba en la imagen anterior; "creciendo" = se agrandó o se enfrió. "cambio_tope_C" negativo = se intensifica. '
-                     'El movimiento (va_hacia/kmh) es aproximado y falta cuando no es confiable.',
+                     'El movimiento (va_hacia/kmh/mov_deg) combina el del satélite con el del pronóstico; '
+                     'con él se estima la posición actual (lat/lon son de la hora del satélite).',
         'celulas': cells[:25],
     }
     json.dump(res, open(os.path.join(OUT, 'nowcast.json'), 'w'), ensure_ascii=False)

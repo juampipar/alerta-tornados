@@ -280,3 +280,4 @@ footer p { margin: 4px 0; }
 .pin-bad { color: #ffb3b3; } .pin-go { color: #ff8fa3; font-weight: 600; } .pin-info { color: var(--mut); }
 .pintag { font-size: .8rem; color: #9be8c4; align-self: center; }
 .otmark span { display: inline-block; transform: translate(-50%, -110%); font-size: 1rem; filter: drop-shadow(0 0 2px #000); }
+.nclabel span { display: inline-block; transform: translate(4px, -50%); font-size: .68rem; font-weight: 700; color: var(--c); text-shadow: 0 0 3px #000, 0 0 3px #000; }
