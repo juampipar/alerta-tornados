@@ -27,12 +27,13 @@ jobs:
       # Lluvia pronosticada del modelo WRF del SMN (4 km). Solo se recalcula cuando sale una corrida nueva.
       - uses: actions/setup-python@v5
         with: { python-version: '3.12', cache: pip, cache-dependency-path: scripts/requirements.txt }
-      - name: Lluvia del modelo SMN
+      - name: Lluvia del modelo SMN e imágenes para la IA
         continue-on-error: true # si falla, el panel se publica igual (sin esa capa)
         timeout-minutes: 15
         run: |
           pip install -q -r scripts/requirements.txt
           python scripts/build-wrf.py _site
+          python scripts/build-images.py _site || echo 'imágenes para la IA: falló, sigo sin ellas'
         env:
           PUBLISHED_WRF: https://juampipar.github.io/alerta-tornados/data/wrf/
           REUSE_ONLY: ${{ github.event.schedule == '7,27,37,47,57 * * * *' && '1' || '' }}
