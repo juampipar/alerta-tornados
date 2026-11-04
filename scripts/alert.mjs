@@ -391,8 +391,9 @@ async function readTelegram() {
   } catch (e) { console.error('Telegram (lectura) falló:', e.message); }
 }
 if (REPLAY) {
-  messages.length = 0; // solo el modo caza
-  state.chase = { on: true, since: NOW, loc: { lat: HOME.lat, lon: HOME.lon, t: NOW }, force: true, seen: {}, lastMsg: 0 };
+  messages.length = 0; // solo lo en vivo (modo caza / satélite)
+  state.satSeen = {}; state.satLast = 0;
+  state.chase = env.REPLAY_NOCHASE ? { on: false } : { on: true, since: NOW, loc: { lat: HOME.lat, lon: HOME.lon, t: NOW }, force: true, seen: {}, lastMsg: 0 };
 } else await readTelegram();
 
 const ANG = { norte: 0, noreste: 45, este: 90, sudeste: 135, sur: 180, sudoeste: 225, oeste: 270, noroeste: 315 };
@@ -456,6 +457,40 @@ if (state.chase.on && state.chase.loc) {
 }
 for (const m of chaseOut) messages.push(m);
 
+/* ---------- 🛰️ Aviso del satélite en días de caza (sin modo caza) ---------- */
+// Tormenta nueva o creciendo, fuerte o con topes que sobresalen, en cualquier parte del Pasillo.
+// Una vez por tormenta y como máximo un aviso cada 30 min. Si el modo caza está prendido, ese avisa (con tu ubicación).
+let satEvent = null;
+const satHunt = REPLAY && env.REPLAY_NOCHASE ? true : huntDay;
+if (!state.chase.on && satHunt && (REPLAY || !quiet)) {
+  let nc = null;
+  try { nc = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8')); } catch { /* sin satélite */ }
+  const fresh = nc?.hora_utc && NOW - Date.parse(nc.hora_utc) < 90 * 60e3;
+  state.satSeen ??= {};
+  for (const [k, t] of Object.entries(state.satSeen)) if (NOW - t > 4 * 3600e3) delete state.satSeen[k];
+  const key = (c) => `${(Math.round(c.lat * 5) / 5).toFixed(1)},${(Math.round(c.lon * 5) / 5).toFixed(1)}`;
+  const cand = (fresh ? nc.celulas : []).filter((c) => (c.tendencia === 'nueva' || c.tendencia === 'creciendo')
+    && (c.fuerza !== 'moderada' || c.topes_sobresalientes > 0) && !state.satSeen[key(c)]);
+  if (cand.length && NOW - (state.satLast ?? 0) > 30 * 60e3) {
+    const cores = cand.sort((a, b) => b.topes_sobresalientes - a.topes_sobresalientes || a.tope_min_C - b.tope_min_C).slice(0, 3).map((c0) => {
+      const est = coreAt(c0, nc.hora_utc, NOW);
+      return { ...c0, lat: est.lat, lon: est.lon, edadMin: Math.round(est.edadMin), d: Math.round(km(HOME, est)), from: rumbo(bearing(HOME, est)) };
+    });
+    for (const c of cand) state.satSeen[key(c)] = NOW; // las demás de esta tanda tampoco se repiten
+    state.satLast = NOW;
+    satEvent = { cores };
+    const line = (c) => `• <b>${esc(c.fuerza)}</b> (${c.tope_min_C} °C${c.topes_sobresalientes ? `, ⚡ ${c.topes_sobresalientes} topes que sobresalen` : ''}) · <b>${esc(c.tendencia)}</b>\n   ${esc(c.cerca_de)} · a ${c.d} km al ${c.from} de Leones${c.va_hacia ? ` · va al ${c.va_hacia}${c.kmh ? ` a ~${c.kmh} km/h` : ''}` : ''}`;
+    messages.push([
+      `🛰️ <b>Tormenta ${cores[0].tendencia === 'nueva' ? 'nueva' : 'creciendo'} en el Pasillo</b> <i>(satélite de las ${nc.hora} h, posición estimada ahora)</i>`,
+      ...cores.map(line),
+      `<a href="${PANEL}">📡 Mirá el radar y el mapa</a> · si salís, mandá /caza y compartí tu ubicación`,
+    ].join('\n'));
+    const z = cores.find((c) => c.imagen);
+    if (z) messages.push({ photo: `${dir}/${z.imagen}`, caption: `🛰️ Zoom satélite: ${esc(z.cerca_de)} · tope ${z.tope_min_C} °C${z.topes_sobresalientes ? ` · ⚡ ${z.topes_sobresalientes} topes que sobresalen` : ''}.` });
+  }
+}
+
+
 let brief = null;
 if (data) {
   brief = await buildBrief();
@@ -467,7 +502,8 @@ if (data) {
   if (!REPLAY) await writeFile(`${dir}/brief.json`, JSON.stringify(brief, null, 1));
 }
 if (brief && messages.length && !(chaseOut.length && !chaseEvent && messages.length === chaseOut.length)) {
-  const focus = chaseEvent ? `MODO CAZA: el usuario está en la ruta (ver "vos"). Decile exactamente qué hacer ahora con las tormentas detectadas por satélite (${chaseEvent.tipo === 'cerca' ? 'hay una tormenta cerca: priorizá su seguridad' : 'hay tormentas nuevas o creciendo'}): quedarse, o moverse (rumbo y km) para quedar de costado y adelante de la mejor, a ~20 km.`
+  const focus = satEvent && !chaseEvent ? `AVISO DEL SATÉLITE: nació o crece una tormenta fuerte en el Pasillo (ver nucleos_satelite). El usuario está en Leones. Decile si vale salir a buscarla (¿llega antes de que oscurezca? ¿hacia dónde va?), hacia dónde y por qué, o si conviene quedarse.`
+    : chaseEvent ? `MODO CAZA: el usuario está en la ruta (ver "vos"). Decile exactamente qué hacer ahora con las tormentas detectadas por satélite (${chaseEvent.tipo === 'cerca' ? 'hay una tormenta cerca: priorizá su seguridad' : 'hay tormentas nuevas o creciendo'}): quedarse, o moverse (rumbo y km) para quedar de costado y adelante de la mejor, a ~20 km.`
     : live.length ? 'hay avisos del SMN de tormentas formándose: qué hacer en las próximas 2 horas'
     : 'el día de caza: a dónde ir, a qué hora salir y qué hacer al llegar';
   const adv = await aiAdvice(brief, focus);
