@@ -34,6 +34,7 @@ jobs:
           pip install -q -r scripts/requirements.txt
           python scripts/build-wrf.py _site
           python scripts/build-images.py _site || echo 'imágenes para la IA: falló, sigo sin ellas'
+          python scripts/nowcast.py _site || echo 'núcleos del satélite: falló'
         env:
           PUBLISHED_WRF: https://juampipar.github.io/alerta-tornados/data/wrf/
           REUSE_ONLY: ${{ github.event.schedule == '7,27,37,47,57 * * * *' && '1' || '' }}
