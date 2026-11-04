@@ -326,7 +326,7 @@ def main():
         mdeg, kmh, fuente = blend((mov, spd) if mov is not None and spd and spd >= 10 else None, steer(p))
         cells.append({
             'lat': round(c['lat'], 2), 'lon': round(c['lon'], 2),
-            'cerca_de': town[0] if dt < 25 else f"{round(dt)} km al {rumbo(bearing((town[1], town[2]), p))} de {town[0]}",
+            'cerca_de': f'sobre {town[0]}' if dt < 8 else f"{round(dt)} km al {rumbo(bearing((town[1], town[2]), p))} de {town[0]}",
             'km_de_leones': round(km((HOME[1], HOME[2]), p)), 'rumbo_desde_leones': rumbo(bearing((HOME[1], HOME[2]), p)),
             'area_km2': c['area_km2'], 'tope_min_C': round(tmin), 'fuerza': fuerza,
             'km2_bajo_-52C': c['km2_bajo_-52C'], 'km2_bajo_-63C': c['km2_bajo_-63C'],
