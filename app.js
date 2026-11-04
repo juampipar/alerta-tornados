@@ -391,7 +391,8 @@ const target = (rank) => (S.zones?.[0] ? goTo(S.zones[0], rank) : rank[0]);
 function renderHero(rank) {
   if (!rank[0]) { $('#hero').textContent = 'Sin datos para este día.'; return; }
   const o = S.opts?.[0], day = ['hoy', 'mañana', 'pasado mañana'][S.day];
-  const confHtml = `<span class="conf conf-${conf(S.day).k}">Confianza ${conf(S.day).k}</span>`;
+  const confLbl = { alta: 'Pronóstico confiable', media: 'Pronóstico más o menos confiable', baja: 'Pronóstico poco confiable' }[conf(S.day).k] ?? `Confianza ${conf(S.day).k}`;
+  const confHtml = `<span class="conf conf-${conf(S.day).k}" title="Qué tan seguro es el pronóstico (no si vale salir)">${confLbl}</span>`;
   if (!o) {
     const b = rank[0], lv = level(b.score);
     $('#hero').innerHTML = `
@@ -400,7 +401,7 @@ function renderHero(rank) {
       <div class="kicker">Sin zona de caza · ${day} ${confHtml}</div>
       <h2>${S.day === 0 ? 'Hoy' : day[0].toUpperCase() + day.slice(1)} no da</h2>
       <p class="verdict">${verdict(b.score)}</p>
-      <p class="sub">Lo mejor es ${esc(b.t.name)} con ${b.score}${S.day === 0 ? ' en lo que queda del día' : ''}.</p>
+      <p class="sub"><b>No vale salir.</b> Lo mejor es ${esc(b.t.name)} con ${b.score}${S.day === 0 ? ' en lo que queda del día' : ''}.${conf(S.day).k === 'alta' ? ' El pronóstico es confiable: es muy probable que hoy no pase nada importante.' : conf(S.day).k === 'baja' ? ' Igual falta mucho: el pronóstico puede cambiar.' : ''}</p>
     </div>
     <p class="mlegend">Ingredientes en <b>${esc(b.t.name)}</b>:</p>
     <div class="metrics">${metricsHtml(b)}</div>
@@ -484,7 +485,7 @@ function focusTown(r) {
 
 function renderDays() {
   const labels = dates().map((d, i) => (i < 2 ? ['Hoy', 'Mañana'][i] : new Date(d + 'T12:00:00Z').toLocaleDateString('es-AR', { weekday: 'long', timeZone: 'UTC' })));
-  $('#days').innerHTML = labels.map((l, i) => `<button data-d="${i}" class="${i === S.day ? 'on' : ''}" title="Confianza ${conf(i).k}">${l[0].toUpperCase() + l.slice(1)}<i class="cdot conf-${conf(i).k}" aria-hidden="true"></i></button>`).join('');
+  $('#days').innerHTML = labels.map((l, i) => `<button data-d="${i}" class="${i === S.day ? 'on' : ''}" title="Pronóstico: confianza ${conf(i).k}">${l[0].toUpperCase() + l.slice(1)}<i class="cdot conf-${conf(i).k}" aria-hidden="true"></i></button>`).join('');
   $$('#days button').forEach((b) => (b.onclick = () => { S.day = +b.dataset.d; renderDays(); render(); }));
 }
 function renderTimebar() {
