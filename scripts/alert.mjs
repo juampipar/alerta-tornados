@@ -10,7 +10,7 @@
 //     cerca de Leones o de las zonas marcadas. Los avisos del SMN de días comunes no se mandan.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, nearestStop, plainKey, sunsetHour } from '../lib/risk.mjs';
+import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, nearestStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -265,7 +265,17 @@ async function buildBrief() {
   return {
     generado: new Date().toISOString(), hora_argentina: clock(nowMin), base: { nombre: 'Leones', lat: HOME.lat, lon: HOME.lon },
     puesta_de_sol_aprox: clock(sunsetHour(HOME.lat, HOME.lon, today) * 60), umbral_dia_de_caza: MIN, dias: days, avisos_smn_corto_plazo: acp,
-    nucleos_satelite: await (async () => { try { const n = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8')); return { hora: n.hora, hora_anterior: n.hora_anterior, como_leer: n.como_leer, nucleos: n.celulas.slice(0, 12) }; } catch { return null; } })(),
+    nucleos_satelite: await (async () => {
+      try {
+        const n = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8'));
+        const r3 = (p) => ({ lat: +p.lat.toFixed(2), lon: +p.lon.toFixed(2) });
+        return { hora: n.hora, hora_anterior: n.hora_anterior, como_leer: n.como_leer, nucleos: n.celulas.slice(0, 12).map((c) => {
+          if (!n.hora_utc || c.mov_deg == null || !c.kmh) return c;
+          const now = coreAt(c, n.hora_utc);
+          return { ...c, ahora_estimado: r3(now), en_30_min: r3(movePoint(now, c.mov_deg, c.kmh / 2)), en_60_min: r3(movePoint(now, c.mov_deg, c.kmh)), atraso_min: Math.round(now.edadMin) };
+        }) };
+      } catch { return null; }
+    })(),
     vos: state.chase?.on && state.chase.loc ? { lat: +state.chase.loc.lat.toFixed(3), lon: +state.chase.loc.lon.toFixed(3), hace_min: Math.round((Date.now() - state.chase.loc.t) / 60000), modo_caza: true } : null,
     imagenes: await (async () => { try { return JSON.parse(await readFile(`${dir}/img/meta.json`, 'utf8')).imagenes.map((x) => ({ ...x, url: `data/img/${x.archivo}` })); } catch { return []; } })(),
     nota: 'Potencial 0–100 de supercélulas con rotación según modelos (no es un aviso de tornado). Radar de velocidad no disponible.',
@@ -394,9 +404,13 @@ if (state.chase.on && state.chase.loc) {
   const me = state.chase.loc;
   let nc = null;
   try { nc = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8')); } catch { /* sin satélite */ }
-  const cores = (nc?.celulas ?? []).map((c) => {
+  const ncFresh = nc?.hora_utc && Date.now() - Date.parse(nc.hora_utc) < 90 * 60e3; // sin dato reciente, no avisar
+  const cores = (ncFresh ? nc.celulas : []).map((c0) => {
+    // Posición estimada AHORA (el satélite llega con 10–30 min de atraso).
+    const est = nc.hora_utc ? coreAt(c0, nc.hora_utc) : { lat: c0.lat, lon: c0.lon, edadMin: 0 };
+    const c = { ...c0, lat: est.lat, lon: est.lon, edadMin: Math.round(est.edadMin) };
     const d = Math.round(km(me, c)), toMe = bearing(c, me);
-    const mv = c.va_hacia ? ANG[c.va_hacia] : null;
+    const mv = c.mov_deg ?? (c.va_hacia ? ANG[c.va_hacia] : null);
     const diff = mv == null ? null : Math.abs(((mv - toMe + 540) % 360) - 180);
     const coming = diff != null && diff < 45 && c.kmh ? Math.round((d / c.kmh) * 60) : null;
     return { ...c, d, from: rumbo(bearing(me, c)), coming };
@@ -417,9 +431,10 @@ if (state.chase.on && state.chase.loc) {
     for (const a of chaseEvent.acp ?? []) state.chase.seen['acp:' + a.id] = Date.now();
     state.chase.lastMsg = Date.now();
     const line = (c) => `• <b>${esc(c.fuerza)}</b> (${c.tope_min_C} °C${c.topes_sobresalientes ? `, ${c.topes_sobresalientes} topes que sobresalen` : ''}) · ${esc(c.tendencia)} · ${esc(c.cerca_de)}\n   a <b>${c.d} km al ${c.from}</b> tuyo${c.va_hacia ? ` · va al ${c.va_hacia}${c.kmh ? ` a ${c.kmh} km/h` : ''}` : ''}${c.coming != null ? ` · <b>viene hacia vos (~${c.coming} min)</b>` : ''}`;
+    const age = chaseEvent.cores[0]?.edadMin;
     const head = chaseEvent.tipo === 'cerca' ? '⚠️ <b>Tormenta cerca tuyo</b>' : chaseEvent.tipo === 'estado' ? '📍 <b>Cómo viene todo</b>' : '🛰️ <b>Se está formando algo</b>';
     chaseOut.push([
-      `${head} <i>(satélite ${nc?.hora ?? '–'} h)</i>`,
+      `${head} <i>(posición estimada ahora · satélite de las ${nc?.hora ?? '–'} h${age ? `, hace ${age} min` : ''})</i>`,
       ...(chaseEvent.cores.length ? chaseEvent.cores.map(line) : ['Sin núcleos de tormenta a menos de 150 km tuyo.']),
       ...(chaseEvent.acp ?? []).map((a) => `• 🚨 Aviso SMN: ${esc(a.event || a.headline)} a ${Math.round(distTo(a, me))} km`),
       `<a href="${PANEL}">📡 Radar y mapa</a>`,

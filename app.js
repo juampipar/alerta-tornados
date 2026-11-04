@@ -1,4 +1,4 @@
-import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, nearestStop, plainKey, bearingTo } from './lib/risk.mjs';
+import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, nearestStop, plainKey, bearingTo, coreAt } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 
 const $ = (s) => document.querySelector(s);
@@ -772,11 +772,30 @@ function renderNowcast() {
   for (const c of nowcast.celulas ?? []) {
     const col = c.fuerza === 'muy fuerte' ? '#c040e8' : c.fuerza === 'fuerte' ? '#ff3b5c' : '#ffd43b';
     const r = c.fuerza === 'muy fuerte' ? 11 : c.fuerza === 'fuerte' ? 9 : 6;
-    const tip = `<b>Tormenta ${esc(c.fuerza)}</b> · satélite ${esc(nowcast.hora)} h<br>Tope ${c.tope_min_C} °C · ${esc(c.tendencia)}${c.topes_sobresalientes ? ` · <b>${c.topes_sobresalientes} topes que sobresalen</b> (señal de supercelda)` : ''}<br>${esc(c.cerca_de)} · ${c.km_de_leones} km de Leones${c.va_hacia ? `<br>Va al ${esc(c.va_hacia)}${c.kmh ? ` a ~${c.kmh} km/h` : ''} (aprox.)` : ''}`;
-    L.circleMarker([c.lat, c.lon], { pane: 'smn', radius: r, color: '#fff', weight: c.tendencia === 'nueva' || c.tendencia === 'creciendo' ? 3 : 1.5, dashArray: c.tendencia === 'nueva' ? '3 3' : null, fillColor: col, fillOpacity: 0.9 })
+    // Posición estimada AHORA a partir del dato del satélite (que llega atrasado) y su movimiento.
+    const est = nowcast.hora_utc ? coreAt(c, nowcast.hora_utc) : { lat: c.lat, lon: c.lon, edadMin: 0 };
+    const age = Math.round(est.edadMin), moving = c.mov_deg != null && c.kmh && !est.stale;
+    const tip = `${est.stale ? `<b>⚠️ Dato viejo</b> (satélite de las ${esc(nowcast.hora)} h, hace ${age} min)<br>` : ''}<b>Tormenta ${esc(c.fuerza)}</b> · ${moving ? `<b>posición estimada ahora</b> (dato del satélite de las ${esc(nowcast.hora)} h, hace ${age} min)` : `satélite ${esc(nowcast.hora)} h`}<br>Tope ${c.tope_min_C} °C · ${esc(c.tendencia)}${c.topes_sobresalientes ? ` · <b>${c.topes_sobresalientes} topes que sobresalen</b> (señal de supercelda)` : ''}<br>${esc(c.cerca_de)}${moving ? `<br>Va al ${esc(c.va_hacia)} a ~${c.kmh} km/h (${esc(c.mov_fuente)}) · puntos: dentro de 30 y 60 min` : ''}`;
+    if (moving && age >= 3) {
+      // Dónde estaba (dato real, tenue) → dónde estaría ahora.
+      L.polyline([[c.lat, c.lon], [est.lat, est.lon]], { pane: 'smn', color: col, weight: 1.5, opacity: 0.5, dashArray: '2 4', interactive: false }).addTo(ncLayer);
+      L.circleMarker([c.lat, c.lon], { pane: 'smn', radius: r * 0.6, color: col, weight: 1, fillOpacity: 0.15, interactive: false }).addTo(ncLayer);
+    }
+    if (moving && c.fuerza === 'moderada') {
+      // Moderadas: solo hacia dónde va (sin etiquetas, para no llenar el mapa).
+      arrow(est, c.mov_deg, Math.min(25, c.kmh / 2), { color: col, weight: 2, opacity: 0.8 }).addTo(ncLayer);
+    } else if (moving) {
+      // Trayectoria estimada: +30 y +60 minutos.
+      const p30 = movePoint(est, c.mov_deg, c.kmh / 2), p60 = movePoint(est, c.mov_deg, c.kmh);
+      L.polyline([[est.lat, est.lon], [p30.lat, p30.lon], [p60.lat, p60.lon]], { pane: 'smn', color: col, weight: 2.5, dashArray: '6 6', interactive: false }).addTo(ncLayer);
+      for (const [q, lbl] of [[p30, '+30'], [p60, '+60']]) {
+        L.circleMarker([q.lat, q.lon], { pane: 'smn', radius: 3, color: col, weight: 1, fillColor: col, fillOpacity: 0.6, interactive: false }).addTo(ncLayer);
+        L.marker([q.lat, q.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'nclabel', html: `<span style="--c:${col}">${lbl}</span>`, iconSize: null }) }).addTo(ncLayer);
+      }
+    }
+    L.circleMarker([est.lat, est.lon], { pane: 'smn', radius: r, color: '#fff', weight: c.tendencia === 'nueva' || c.tendencia === 'creciendo' ? 3 : 1.5, dashArray: c.tendencia === 'nueva' ? '3 3' : null, fillColor: col, fillOpacity: 0.9 })
       .bindTooltip(tip, { sticky: true }).addTo(ncLayer);
-    if (c.va_hacia && c.kmh) arrow({ lat: c.lat, lon: c.lon }, NC_ANG[c.va_hacia], Math.min(40, c.kmh / 2), { color: col, weight: 2.5 }).addTo(ncLayer);
-    if (c.topes_sobresalientes) L.marker([c.lat, c.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'otmark', html: '<span>⚡</span>', iconSize: null }) }).addTo(ncLayer);
+    if (c.topes_sobresalientes) L.marker([est.lat, est.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'otmark', html: '<span>⚡</span>', iconSize: null }) }).addTo(ncLayer);
   }
 }
 
@@ -883,5 +902,6 @@ $$('#windysw button').forEach((b) => (b.onclick = () => {
 }));
 setInterval(loadRadar, 5 * 60e3);
 setInterval(() => { loadSmn(); loadNowcast(); }, 10 * 60e3);
+setInterval(renderNowcast, 60e3); // la posición estimada avanza minuto a minuto
 loadNowcast();
 setInterval(() => { loadForecast(); loadWrf(); }, 60 * 60e3);
