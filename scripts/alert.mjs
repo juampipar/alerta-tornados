@@ -265,6 +265,8 @@ async function buildBrief() {
   return {
     generado: new Date().toISOString(), hora_argentina: clock(nowMin), base: { nombre: 'Leones', lat: HOME.lat, lon: HOME.lon },
     puesta_de_sol_aprox: clock(sunsetHour(HOME.lat, HOME.lon, today) * 60), umbral_dia_de_caza: MIN, dias: days, avisos_smn_corto_plazo: acp,
+    nucleos_satelite: await (async () => { try { const n = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8')); return { hora: n.hora, hora_anterior: n.hora_anterior, como_leer: n.como_leer, nucleos: n.celulas.slice(0, 12) }; } catch { return null; } })(),
+    vos: state.chase?.on && state.chase.loc ? { lat: +state.chase.loc.lat.toFixed(3), lon: +state.chase.loc.lon.toFixed(3), hace_min: Math.round((Date.now() - state.chase.loc.t) / 60000), modo_caza: true } : null,
     imagenes: await (async () => { try { return JSON.parse(await readFile(`${dir}/img/meta.json`, 'utf8')).imagenes.map((x) => ({ ...x, url: `data/img/${x.archivo}` })); } catch { return []; } })(),
     nota: 'Potencial 0–100 de supercélulas con rotación según modelos (no es un aviso de tornado). Radar de velocidad no disponible.',
   };
@@ -279,7 +281,10 @@ Reglas obligatorias:
 - Seguridad: nunca recomiendes acercarse a menos de 15 km de una tormenta, ponerse delante de su camino, caminos de tierra,
   ni salir o seguir de noche (después de la puesta del sol). Interceptar de costado (lado norte si van al este), nunca perseguir por detrás.
 - Si ninguna opción llega a tiempo o el potencial es < 45, decí que hoy no conviene.
-- No prometas tornados: hablá de "chances".`;
+- No prometas tornados: hablá de "chances".
+- "nucleos_satelite" son tormentas detectadas AHORA por satélite (topes fríos). Si "vos" existe, es la ubicación del usuario:
+  decí a qué distancia y rumbo desde él está la mejor tormenta y si conviene quedarse o moverse (rumbo y km aproximados) para
+  quedar de costado y adelante de ella, a unos 20 km. Si una viene hacia él, avisá cuánto falta y hacia dónde correrse.`;
 
 // Imágenes para la IA (scripts/build-images.py): satélite ahora y hace 1 h, lluvia del modelo.
 async function aiImages() {
@@ -340,13 +345,97 @@ async function aiAdvice(brief, focus) {
   return null;
 }
 
+
+/* ---------- 🎯 Modo caza: ubicación en vivo por Telegram + núcleos del satélite ---------- */
+// El usuario comparte su ubicación en tiempo real con el bot (o manda /caza) y el sistema le avisa en cada corrida
+// si nace, crece o se acerca una tormenta, con la recomendación de la IA. /fin lo apaga.
+state.chase ??= { on: false };
+const chaseOut = [];
+async function readTelegram() {
+  const { TELEGRAM_BOT_TOKEN: tk, TELEGRAM_CHAT_ID: ch } = env;
+  if (!tk || !ch) return;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${tk}/getUpdates?offset=${(state.tgOffset ?? 0) + 1}&timeout=0`);
+    if (!r.ok) return;
+    for (const u of (await r.json()).result ?? []) {
+      state.tgOffset = Math.max(state.tgOffset ?? 0, u.update_id);
+      const m = u.message || u.edited_message;
+      if (!m || String(m.chat?.id) !== String(ch)) continue;
+      if (m.location) {
+        const was = state.chase.on;
+        state.chase.loc = { lat: m.location.latitude, lon: m.location.longitude, t: (m.edit_date || m.date) * 1000 };
+        if (!was) { state.chase.on = true; state.chase.since = Date.now(); state.chase.welcome = true; }
+      }
+      const txt = (m.text || '').trim().toLowerCase();
+      if (/^\/?caza\b/.test(txt)) { state.chase.on = true; state.chase.since = Date.now(); state.chase.welcome = true; }
+      if (/^\/?(fin|stop|basta)\b/.test(txt)) { state.chase.on = false; chaseOut.push('🏁 <b>Modo caza apagado.</b> Buen regreso.'); }
+      if (/^\/?estado\b/.test(txt)) state.chase.force = true;
+    }
+  } catch (e) { console.error('Telegram (lectura) falló:', e.message); }
+}
+await readTelegram();
+
+const ANG = { norte: 0, noreste: 45, este: 90, sudeste: 135, sur: 180, sudoeste: 225, oeste: 270, noroeste: 315 };
+if (state.chase.on) {
+  const loc = state.chase.loc;
+  const stale = loc && Date.now() - loc.t > 90 * 60e3;
+  if (stale || (!loc && Date.now() - (state.chase.since ?? 0) > 3 * 3600e3)) {
+    state.chase.on = false;
+    chaseOut.push('🏁 <b>Modo caza apagado</b>: hace rato que no recibo tu ubicación. Mandá /caza o compartí la ubicación para volver a prenderlo.');
+  } else if (state.chase.welcome) {
+    state.chase.welcome = false;
+    chaseOut.push(loc ? '🎯 <b>Modo caza activado.</b> Tengo tu ubicación: te aviso si nace, crece o se acerca una tormenta. /fin para apagarlo.'
+      : '🎯 <b>Modo caza activado.</b> Compartime tu <b>ubicación en tiempo real</b> (📎 → Ubicación → Compartir en tiempo real) para decirte adónde moverte. /fin para apagarlo.');
+  }
+}
+
+let chaseEvent = null;
+if (state.chase.on && state.chase.loc) {
+  const me = state.chase.loc;
+  let nc = null;
+  try { nc = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8')); } catch { /* sin satélite */ }
+  const cores = (nc?.celulas ?? []).map((c) => {
+    const d = Math.round(km(me, c)), toMe = bearing(c, me);
+    const mv = c.va_hacia ? ANG[c.va_hacia] : null;
+    const diff = mv == null ? null : Math.abs(((mv - toMe + 540) % 360) - 180);
+    const coming = diff != null && diff < 45 && c.kmh ? Math.round((d / c.kmh) * 60) : null;
+    return { ...c, d, from: rumbo(bearing(me, c)), coming };
+  }).filter((c) => c.d <= 150).sort((a, b) => a.d - b.d);
+  const strong = (c) => c.fuerza !== 'moderada' || c.topes_sobresalientes > 0;
+  state.chase.seen ??= {};
+  const key = (c) => `${c.lat.toFixed(1)},${c.lon.toFixed(1)}`;
+  const news = cores.filter((c) => (c.tendencia === 'nueva' || c.tendencia === 'creciendo') && (strong(c) || c.d <= 60) && !state.chase.seen[key(c)]);
+  const danger = cores.find((c) => c.d <= 20 || (c.coming != null && c.coming <= 40 && c.d <= 50));
+  const acp = (smn?.alerts ?? []).filter((a) => a.shortTerm && distTo(a, me) <= 60 && !state.chase.seen['acp:' + a.id]);
+  const since = Date.now() - (state.chase.lastMsg ?? 0);
+  if (danger && since > 10 * 60e3) chaseEvent = { tipo: 'cerca', cores: [danger, ...news.slice(0, 2)] };
+  else if ((news.length || acp.length) && since > 20 * 60e3) chaseEvent = { tipo: 'novedad', cores: news.slice(0, 3), acp };
+  else if (state.chase.force) chaseEvent = { tipo: 'estado', cores: cores.slice(0, 3) };
+  state.chase.force = false;
+  if (chaseEvent) {
+    for (const c of chaseEvent.cores) state.chase.seen[key(c)] = Date.now();
+    for (const a of chaseEvent.acp ?? []) state.chase.seen['acp:' + a.id] = Date.now();
+    state.chase.lastMsg = Date.now();
+    const line = (c) => `• <b>${esc(c.fuerza)}</b> (${c.tope_min_C} °C${c.topes_sobresalientes ? `, ${c.topes_sobresalientes} topes que sobresalen` : ''}) · ${esc(c.tendencia)} · ${esc(c.cerca_de)}\n   a <b>${c.d} km al ${c.from}</b> tuyo${c.va_hacia ? ` · va al ${c.va_hacia}${c.kmh ? ` a ${c.kmh} km/h` : ''}` : ''}${c.coming != null ? ` · <b>viene hacia vos (~${c.coming} min)</b>` : ''}`;
+    const head = chaseEvent.tipo === 'cerca' ? '⚠️ <b>Tormenta cerca tuyo</b>' : chaseEvent.tipo === 'estado' ? '📍 <b>Cómo viene todo</b>' : '🛰️ <b>Se está formando algo</b>';
+    chaseOut.push([
+      `${head} <i>(satélite ${nc?.hora ?? '–'} h)</i>`,
+      ...(chaseEvent.cores.length ? chaseEvent.cores.map(line) : ['Sin núcleos de tormenta a menos de 150 km tuyo.']),
+      ...(chaseEvent.acp ?? []).map((a) => `• 🚨 Aviso SMN: ${esc(a.event || a.headline)} a ${Math.round(distTo(a, me))} km`),
+      `<a href="${PANEL}">📡 Radar y mapa</a>`,
+    ].join('\n'));
+  }
+}
+for (const m of chaseOut) messages.push(m);
+
 let brief = null;
 if (data) {
   brief = await buildBrief();
   await writeFile(`${dir}/brief.json`, JSON.stringify(brief, null, 1));
 }
-if (brief && messages.length) {
-  const focus = live.length ? 'hay avisos del SMN de tormentas formándose: qué hacer en las próximas 2 horas'
+if (brief && messages.length && !(chaseOut.length && !chaseEvent && messages.length === chaseOut.length)) {
+  const focus = chaseEvent ? `MODO CAZA: el usuario está en la ruta (ver "vos"). Decile exactamente qué hacer ahora con las tormentas detectadas por satélite (${chaseEvent.tipo === 'cerca' ? 'hay una tormenta cerca: priorizá su seguridad' : 'hay tormentas nuevas o creciendo'}): quedarse, o moverse (rumbo y km) para quedar de costado y adelante de la mejor, a ~20 km.`
+    : live.length ? 'hay avisos del SMN de tormentas formándose: qué hacer en las próximas 2 horas'
     : 'el día de caza: a dónde ir, a qué hora salir y qué hacer al llegar';
   const adv = await aiAdvice(brief, focus);
   if (adv) messages.push(`🤖 <b>Qué haría yo</b> <i>(IA, con los datos de arriba)</i>\n${esc(adv).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^\s*[*-]\s+/gm, '• ')}\n<i>Es una sugerencia: manda el radar y tu criterio.</i>`);

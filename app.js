@@ -13,7 +13,7 @@ const WINDOW = [11, 2]; // de 11 h a 2 h del día siguiente: en el Pasillo mucha
 const S = {
   data: null, smn: null, all: false, day: 0, hour: Math.min(22, Math.max(11, nowArt().hour)), max: true,
   origin: { ...HOME, label: 'Leones' },
-  layers: { zonas: true, smn: true, lluvia: false, radar: false, sat: false, ir: false }, // RainViewer casi no cubre el centro de Argentina: apagado de entrada
+  layers: { zonas: true, smn: true, nucleos: true, lluvia: false, radar: false, sat: false, ir: false }, // RainViewer casi no cubre el centro de Argentina: apagado de entrada
 };
 
 /* ---------------- Mapa ---------------- */
@@ -187,6 +187,7 @@ $$('#layers .chip').forEach((b) => (b.onclick = () => {
   S.layers[k] = on; b.classList.toggle('on', on);
   if (k === 'zonas') { on ? gridLayer.addTo(map) : gridLayer.remove(); $('#legend').hidden = !on; renderZones(); }
   if (k === 'lluvia') renderWrf();
+  if (k === 'nucleos') renderNowcast();
   if (k === 'smn') on ? smnLayer.addTo(map) : smnLayer.remove();
   if (k === 'radar') { frames.forEach((f) => (on ? f.addTo(map) : f.remove())); if (!on) stamp(''); }
   if (k === 'sat' || k === 'ir') setSat(k, on);
@@ -757,6 +758,28 @@ async function loadForecast() {
   }
   buildGrid(); renderDays(); render(); renderStatus();
 }
+/* ---------------- Núcleos de tormenta detectados por satélite (scripts/nowcast.py) ---------------- */
+const ncLayer = L.layerGroup().addTo(map);
+const NC_ANG = { norte: 0, noreste: 45, este: 90, sudeste: 135, sur: 180, sudoeste: 225, oeste: 270, noroeste: 315 };
+let nowcast = null;
+async function loadNowcast() {
+  try { nowcast = await getJson('data/nowcast.json'); } catch { nowcast = null; }
+  renderNowcast();
+}
+function renderNowcast() {
+  ncLayer.clearLayers();
+  if (!S.layers.nucleos || !nowcast) return;
+  for (const c of nowcast.celulas ?? []) {
+    const col = c.fuerza === 'muy fuerte' ? '#c040e8' : c.fuerza === 'fuerte' ? '#ff3b5c' : '#ffd43b';
+    const r = c.fuerza === 'muy fuerte' ? 11 : c.fuerza === 'fuerte' ? 9 : 6;
+    const tip = `<b>Tormenta ${esc(c.fuerza)}</b> · satélite ${esc(nowcast.hora)} h<br>Tope ${c.tope_min_C} °C · ${esc(c.tendencia)}${c.topes_sobresalientes ? ` · <b>${c.topes_sobresalientes} topes que sobresalen</b> (señal de supercelda)` : ''}<br>${esc(c.cerca_de)} · ${c.km_de_leones} km de Leones${c.va_hacia ? `<br>Va al ${esc(c.va_hacia)}${c.kmh ? ` a ~${c.kmh} km/h` : ''} (aprox.)` : ''}`;
+    L.circleMarker([c.lat, c.lon], { pane: 'smn', radius: r, color: '#fff', weight: c.tendencia === 'nueva' || c.tendencia === 'creciendo' ? 3 : 1.5, dashArray: c.tendencia === 'nueva' ? '3 3' : null, fillColor: col, fillOpacity: 0.9 })
+      .bindTooltip(tip, { sticky: true }).addTo(ncLayer);
+    if (c.va_hacia && c.kmh) arrow({ lat: c.lat, lon: c.lon }, NC_ANG[c.va_hacia], Math.min(40, c.kmh / 2), { color: col, weight: 2.5 }).addTo(ncLayer);
+    if (c.topes_sobresalientes) L.marker([c.lat, c.lon], { pane: 'smn', interactive: false, icon: L.divIcon({ className: 'otmark', html: '<span>⚡</span>', iconSize: null }) }).addTo(ncLayer);
+  }
+}
+
 async function loadSmn() {
   try { S.smn = await getJson('data/smn.json'); } catch { S.smn = { ok: false, error: 'sin archivo de avisos' }; }
   renderSmn(); renderStatus();
@@ -859,5 +882,6 @@ $$('#windysw button').forEach((b) => (b.onclick = () => {
   $('#windyopen').href = `https://www.windy.com/-32.660/-62.300?${o},-32.660,-62.300,7`;
 }));
 setInterval(loadRadar, 5 * 60e3);
-setInterval(() => { loadSmn(); }, 10 * 60e3);
+setInterval(() => { loadSmn(); loadNowcast(); }, 10 * 60e3);
+loadNowcast();
 setInterval(() => { loadForecast(); loadWrf(); }, 60 * 60e3);

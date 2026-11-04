@@ -46,6 +46,7 @@
       <div class="chips" id="layers">
         <button data-l="zonas" class="chip on">Potencial</button>
         <button data-l="smn" class="chip on">Avisos SMN</button>
+        <button data-l="nucleos" class="chip on" title="Tormentas detectadas ahora por satélite (topes fríos): amarillo moderada, rojo fuerte, lila muy fuerte; ⚡ = topes que sobresalen">Tormentas ahora</button>
         <button data-l="lluvia" class="chip" title="Lluvia pronosticada por el modelo del SMN (4 km): como un radar del futuro">Lluvia SMN</button>
         <button data-l="radar" class="chip" title="RainViewer: casi sin cobertura en el centro de Argentina">Radar RV</button>
         <button data-l="sat" class="chip">Satélite</button>
@@ -129,6 +130,14 @@
         <li><b>Volver:</b> si a las 19 h no se formó nada, no dio (pasa seguido). Cuando se pone el sol, volvé. De noche no se persigue.</li>
       </ol>
       <p class="muted">El pronóstico te lleva a la zona y el radar te dice dónde está la tormenta. Con el plan fijado, solo cambiás si el cartel te avisa (otra zona 10+ puntos mejor, tu zona baja de 45 o el SMN avisa en otro lado). Que la zona se corra 30–40 km es normal.</p>
+
+      <h3>🎯 Modo caza por Telegram</h3>
+      <ul>
+        <li>Cuando salgas, en el chat del bot tocá <b>📎 → Ubicación → Compartir ubicación en tiempo real</b> (o mandá <b>/caza</b>).</li>
+        <li>En cada actualización (cada 10–20 min) el sistema mira las <b>tormentas detectadas por satélite</b>, los avisos del SMN y tu posición. Si nace, crece o se acerca una tormenta, te escribe con <b>🤖 qué haría la IA</b>: quedarte o adónde moverte.</li>
+        <li><b>/estado</b> te manda cómo viene todo. <b>/fin</b> lo apaga (también se apaga solo si dejás de compartir la ubicación).</li>
+        <li>En el mapa, <b>Tormentas ahora</b> muestra esos núcleos: amarillo moderada, rojo fuerte, lila muy fuerte, borde grueso = creciendo, ⚡ = topes que sobresalen (señal de supercelda).</li>
+      </ul>
 
       <h3>Mirá el cielo mientras esperás</h3>
       <ul>
