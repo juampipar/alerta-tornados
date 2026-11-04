@@ -508,6 +508,6 @@ for (const m of messages) {
   }
   if (!r.ok) { ok = false; console.error('Telegram error', r.status, await r.text()); }
 }
-if (ok && !REPLAY) await writeFile(STATE, JSON.stringify(state)); // si falló, reintenta en la próxima hora
-else process.exit(1);
+if (!ok) process.exit(1); // si falló, no se guarda el estado: reintenta en la próxima corrida
+if (!REPLAY) await writeFile(STATE, JSON.stringify(state));
 console.log(`Enviado: ${messages.length} mensaje(s).`);
