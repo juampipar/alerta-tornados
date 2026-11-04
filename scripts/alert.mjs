@@ -265,6 +265,7 @@ async function buildBrief() {
   return {
     generado: new Date().toISOString(), hora_argentina: clock(nowMin), base: { nombre: 'Leones', lat: HOME.lat, lon: HOME.lon },
     puesta_de_sol_aprox: clock(sunsetHour(HOME.lat, HOME.lon, today) * 60), umbral_dia_de_caza: MIN, dias: days, avisos_smn_corto_plazo: acp,
+    imagenes: await (async () => { try { return JSON.parse(await readFile(`${dir}/img/meta.json`, 'utf8')).imagenes.map((x) => ({ ...x, url: `data/img/${x.archivo}` })); } catch { return []; } })(),
     nota: 'Potencial 0–100 de supercélulas con rotación según modelos (no es un aviso de tornado). Radar de velocidad no disponible.',
   };
 }
@@ -280,26 +281,63 @@ Reglas obligatorias:
 - Si ninguna opción llega a tiempo o el potencial es < 45, decí que hoy no conviene.
 - No prometas tornados: hablá de "chances".`;
 
+// Imágenes para la IA (scripts/build-images.py): satélite ahora y hace 1 h, lluvia del modelo.
+async function aiImages() {
+  try {
+    const meta = JSON.parse(await readFile(`${dir}/img/meta.json`, 'utf8'));
+    const out = [];
+    for (const im of meta.imagenes ?? []) {
+      const buf = await readFile(`${dir}/img/${im.archivo}`);
+      out.push({ ...im, data: buf.toString('base64') });
+    }
+    return out;
+  } catch { return []; }
+}
+
+const AI_IMAGES_GUIDE = `Además del JSON vas a recibir imágenes del Pasillo (recorte 67°O–57°O, 37,5°S–30°S) con grilla cada 1°,
+pueblos marcados, LEONES (la base, rombo celeste) y los avisos a corto plazo del SMN con contorno rojo:
+- "Satélite infrarrojo" ahora y 1 hora antes: los topes fríos (colores intensos/blanco brillante) son tormentas profundas.
+  Compará las dos: ¿qué núcleos son NUEVOS o CRECIERON (se formaron en la última hora)? ¿hacia dónde se movieron? ¿están aislados o en línea?
+- "Satélite visible" (de día): torres de cúmulos y yunques blancos; campos de cúmulos que se organizan en línea indican dónde nace la convección.
+- "Lluvia pronosticada por el modelo SMN" +1 h y +3 h: dónde el modelo espera tormentas pronto.
+Usá las imágenes para decir DÓNDE se está formando algo ahora (cerca de qué pueblo), si crece, hacia dónde va y si conviene
+moverse para quedar de costado. Si las imágenes no muestran nada importante cerca, decilo. No inventes lo que no se ve.`;
+
 async function aiAdvice(brief, focus) {
   const key = env.GEMINI_API_KEY;
   if (!key) return null;
-  const model = env.GEMINI_MODEL || 'gemini-flash-latest';
-  try {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 30000);
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, signal: ctl.signal,
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: `${AI_RULES}\n\nEnfocate en: ${focus}\n\nJSON:\n${JSON.stringify(brief)}` }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 400 },
-      }),
-    });
-    clearTimeout(timer);
-    if (!r.ok) { console.error('IA error', r.status, (await r.text()).slice(0, 300)); return null; }
-    const j = await r.json();
-    const txt = j.candidates?.[0]?.content?.parts?.map((p) => p.text).join('').trim();
-    return txt || null;
-  } catch (e) { console.error('IA falló:', e.message); return null; }
+  const imgs = await aiImages();
+  const parts = [{ text: `${AI_RULES}\n\n${imgs.length ? AI_IMAGES_GUIDE + '\n\n' : ''}Enfocate en: ${focus}\n\nJSON:\n${JSON.stringify(brief)}` }];
+  for (const im of imgs) {
+    parts.push({ text: `Imagen: ${im.que_es} (${im.hora} h)` });
+    parts.push({ inline_data: { mime_type: 'image/png', data: im.data } });
+  }
+  // Modelo principal y uno más liviano de respaldo; reintentos si está saturado (503) o con límite (429).
+  const models = [...new Set([env.GEMINI_MODEL || 'gemini-flash-latest', 'gemini-flash-lite-latest'])];
+  for (const model of models) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 60000);
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' }, signal: ctl.signal,
+          body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.3, maxOutputTokens: 600 } }),
+        });
+        clearTimeout(timer);
+        if (r.ok) {
+          const j = await r.json();
+          const txt = j.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('').trim();
+          if (txt) { console.log(`IA: ${model} (${imgs.length} imágenes)`); return txt; }
+          console.error('IA: respuesta vacía', JSON.stringify(j).slice(0, 300));
+        } else {
+          console.error(`IA error ${model}`, r.status, (await r.text()).slice(0, 200));
+          if (![429, 500, 503].includes(r.status)) break; // error de pedido: probar el otro modelo
+        }
+      } catch (e) { console.error('IA falló:', e.message); }
+      await sleep([5000, 15000, 0][attempt]);
+    }
+  }
+  return null;
 }
 
 let brief = null;
