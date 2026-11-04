@@ -10,6 +10,10 @@ on:
         description: 'Mandar un resumen por Telegram aunque no haya alerta'
         type: boolean
         default: false
+      repetir:
+        description: 'Repetir un momento pasado en modo caza desde Leones (hora UTC, ej. 2026-11-03T21:40). No publica el panel.'
+        type: string
+        default: ''
 permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: false }
 jobs:
@@ -38,6 +42,8 @@ jobs:
         env:
           PUBLISHED_WRF: https://juampipar.github.io/alerta-tornados/data/wrf/
           REUSE_ONLY: ${{ github.event.schedule == '7,27,37,47,57 * * * *' && '1' || '' }}
+          NOWCAST_AT: ${{ inputs.repetir }}
+          REPLAY_AT: ${{ inputs.repetir }}
       # Alertas Telegram: el estado (qué ya se envió) se guarda en la caché de Actions entre corridas.
       - uses: actions/cache/restore@v4
         with: { path: .alert-state, key: 'alert-state-${{ github.run_id }}', restore-keys: alert-state- }
@@ -53,11 +59,14 @@ jobs:
           RADIUS_KM: ${{ vars.RADIUS_KM || '200' }}
           ALERT_STATE: .alert-state/state.json
           TEST: ${{ inputs.prueba && '1' || '' }}
+          REPLAY_AT: ${{ inputs.repetir }}
       - uses: actions/cache/save@v4
-        if: always()
+        if: ${{ always() && !inputs.repetir }}
         continue-on-error: true
         with: { path: .alert-state, key: 'alert-state-${{ github.run_id }}' }
       - uses: actions/upload-pages-artifact@v3
+        if: ${{ !inputs.repetir }} # una repetición no publica el panel (tendría datos viejos)
         with: { path: _site }
       - id: d
+        if: ${{ !inputs.repetir }}
         uses: actions/deploy-pages@v4

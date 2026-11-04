@@ -138,7 +138,8 @@ def smn_polygons():
         return []
 
 
-now = datetime.now(timezone.utc)
+_at = os.environ.get('REPLAY_AT') or os.environ.get('NOWCAST_AT')
+now = datetime.fromisoformat(_at).replace(tzinfo=timezone.utc) if _at else datetime.now(timezone.utc)  # REPLAY_AT: repetir un momento pasado
 polys = smn_polygons()
 meta = {'generado': now.isoformat(), 'bbox': BBOX, 'proyeccion': 'lat/lon (equirectangular)', 'imagenes': []}
 hl = lambda t: t.astimezone(ART).strftime('%H:%M')  # noqa: E731
