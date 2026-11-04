@@ -32,7 +32,7 @@ Todo corre gratis en **GitHub Actions** (workflow `Publicar panel`, cada ~10–2
 - **Tormentas ahora**: el satélite llega con 10–30 min de atraso; cada núcleo se **adelanta** con su movimiento (satélite + pronóstico) para estimar dónde está ahora y en +30/+60 min.
 - **IA (Gemini)**: recibe `brief.json` + las imágenes (incluidos los zooms de alta resolución) y escribe "🤖 Qué haría yo", con reglas de seguridad fijas.
 
-**Mensajes de Telegram:** 🌪️ Día de caza · 🚨 ¡Ya se están formando! (SMN) · 🎯 Modo caza (con tu ubicación en tiempo real: ⚠️ tormenta cerca / 🛰️ se está formando, + zoom del satélite) · 🤖 Qué haría yo.
+**Mensajes de Telegram:** 🌪️ Día de caza · 🚨 ¡Ya se están formando! (SMN) · 🛰️ Tormenta nueva o creciendo (satélite, días de caza) · 🎯 Modo caza (con tu ubicación en tiempo real: ⚠️ tormenta cerca / 🛰️ se está formando, + zoom del satélite) · 🤖 Qué haría yo.
 
 **Probar con un momento pasado:** Actions → Publicar panel → Run workflow → `repetir` = hora UTC (ej. `2026-11-03T21:40`). Simula el modo caza desde Leones con el satélite de ese momento, manda los mensajes y no publica el panel.
 
