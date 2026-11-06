@@ -2,6 +2,7 @@ import { HOME, POINTS, buildDataset, level, scoreColor, verdict, km, driveHours,
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 import { loadHistory } from './lib/historial-ui.mjs';
 import { initRed, setRedLayer } from './lib/red.mjs';
+import { shiftZone, zoneWindow, correctedWindow } from './lib/sesgo.mjs';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -421,7 +422,8 @@ function renderHero(rank) {
       <h2>Zona ${esc(o.z.name)}</h2>
       <p class="verdict">${verdict(o.z.v)}</p>
       <p class="sub">👁 Parar en ${stopTxt(o)} (${vpSpan(o.vp)})</p>
-      <p class="sub">Pico <b>${hm(o.peakH)}</b> · ${o.dist} km desde ${esc(S.origin.label)} (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
+      <p class="sub">Pico <b>${hm(o.peakH)}</b>${ventTxt(o)} · ${o.dist} km desde ${esc(S.origin.label)} (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
+      ${biasTxt()}
       ${routeTxt(o) ? `<p class="sub">${routeTxt(o)}</p>` : ''}
       <p class="sub conftxt">${conf(S.day).txt}</p>
       <div class="pbtns"><a class="go" href="${dirLink(o.vp.lat, o.vp.lon)}" target="_blank" rel="noopener">Ruta a la parada →</a> ${S.pin?.found ? '' : '<button class="chip pinbtn" data-k="0">📌 Fijar este plan</button>'} <a class="chip" href="#plan">Plan hora por hora ↓</a></div>
@@ -461,7 +463,7 @@ function renderList(rank) {
     return `<li class="optrow${o.reachable ? '' : ' dim'}" style="--c:${c}">
       <div class="ohead"><span class="sc" style="background:${c}">${o.z.v}</span><b>${k + 1}. Zona ${esc(o.z.name)}</b></div>
       <p>👁 ${stopTxt(o)} · ${vpSpan(o.vp)}</p>
-      <p>Pico <b>${hm(o.peakH)}</b> · ${o.dist} km (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
+      <p>Pico <b>${hm(o.peakH)}</b>${ventTxt(o)} · ${o.dist} km (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
       ${routeTxt(o) ? `<p>${routeTxt(o)}</p>` : ''}
       <div class="pbtns"><a class="go" href="${dirLink(o.vp.lat, o.vp.lon)}" target="_blank" rel="noopener">Ruta →</a> <button class="chip optshow" data-k="${k}">Ver en el mapa</button> ${S.pin?.found && k === 0 ? '<span class="pintag">📌 fijado</span>' : `<button class="chip pinbtn" data-k="${k}">📌 Fijar</button>`}</div>
     </li>`;
@@ -545,7 +547,23 @@ function dayZones(date, max = 2) {
     for (const j of idx) if ((S.data.grid.score[k][j] ?? 0) > v) { v = S.data.grid.score[k][j]; i = j; }
     return { lat, lon, v, i };
   });
-  return findZones(cells, S.data.towns, max);
+  // Ventana de horas con la zona del modelo; después, la corrección aprendida del historial (zona y hora).
+  const hourOf = (j) => { const t = S.data.times[j]; return +t.slice(11, 13) + (t.startsWith(date) ? 0 : 24); };
+  return findZones(cells, S.data.towns, max).map((z) => {
+    const w = zoneWindow(z, S.data.grid.pts, S.data.grid.score, idx, hourOf);
+    return { ...shiftZone(z, S.bias), ventana: correctedWindow(w, S.bias), dt: S.bias?.aplicado ? S.bias.horas : 0 };
+  });
+}
+const ventTxt = (o) => (o.z.ventana ? ` · ventana <b>${hm(o.z.ventana[0])}–${hm(o.z.ventana[1])}</b>` : '');
+// Qué aprendió el panel de los días anteriores (zona y hora).
+function biasTxt() {
+  const b = S.bias;
+  if (!b) return '';
+  if (!b.aplicado) return `<p class="sub biasinfo">📚 Aprendiendo de los errores: ${b.dias_usados} de ${b.minimo} días con tormentas para empezar a corregir zona y hora.</p>`;
+  const d = Math.round(Math.hypot(b.este_km, b.norte_km));
+  const dir = d ? `${d} km al ${rumbo((Math.atan2(b.este_km, b.norte_km) * 180) / Math.PI)}` : 'sin corrimiento';
+  const hr = Math.abs(b.horas) < 0.25 ? 'a la hora' : `${Math.abs(b.horas).toFixed(1).replace('.', ',')} h ${b.horas > 0 ? 'más tarde' : 'más temprano'}`;
+  return `<p class="sub biasinfo">📚 Corregido con ${b.dias_usados} días: las tormentas aparecieron ${dir} y ${hr} de lo pronosticado. Zona y horas ya incluyen la corrección.</p>`;
 }
 function renderPlan() {
   const el = $('#plan');
@@ -950,6 +968,8 @@ function renderZones() {
 
 loadForecast(); loadSmn(); loadRadar(); loadWrf();
 loadHistory($('#historial'));
+// Corrección aprendida (la calcula el historial en cada corrida).
+fetch('data/historial.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((h) => { if (h?.sesgo) { S.bias = h.sesgo; render(); } }).catch(() => {});
 initRed($('#red'), {
   map,
   getOrigin: () => S.origin,

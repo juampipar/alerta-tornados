@@ -3,6 +3,7 @@
 // escribe <datos>/historial.json y una copia en <_site>/data/historial.json para el panel.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { updateHistory, artDate } from '../lib/historial.mjs';
+import { computeBias } from '../lib/sesgo.mjs';
 import { SUPA_URL, SUPA_KEY } from '../lib/red-config.mjs';
 
 const site = process.argv[2] || '_site', store = process.argv[3] || '.datos';
@@ -33,6 +34,8 @@ hist = updateHistory(hist, {
   nowcast: await readJson(`${d}/nowcast.json`),
   publicaciones: await publicaciones(),
 });
+hist.sesgo = computeBias(hist, artDate(Date.now()));
+console.log(`corrección aprendida: ${hist.sesgo.aplicado ? `${hist.sesgo.este_km} km al este, ${hist.sesgo.norte_km} km al norte, ${hist.sesgo.horas} h` : 'todavía no'} (${hist.sesgo.dias_usados} días)`);
 const out = JSON.stringify(hist);
 await mkdir(store, { recursive: true });
 await writeFile(`${store}/historial.json`, out);
