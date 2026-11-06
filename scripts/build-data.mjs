@@ -5,16 +5,17 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { buildDataset } from '../lib/risk.mjs';
 import { fetchSmn, SMN_FEED } from '../lib/smn.mjs';
+import { buildModels } from '../lib/modelos.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 await mkdir(dir, { recursive: true });
 
-async function published(url) {
+async function published(url, maxMin = 115) {
   try {
     const r = await fetch(url, { cache: 'no-store' });
     if (!r.ok) return null;
     const d = await r.json();
-    return Date.now() - Date.parse(d.generated) < 115 * 60e3 ? d : null;
+    return Date.now() - Date.parse(d.generated) < maxMin * 60e3 ? d : null;
   } catch { return null; }
 }
 
@@ -28,6 +29,19 @@ if (reused) {
   console.log(`forecast.json: ${d.towns.length} localidades, ${d.grid.pts.length} celdas`);
 } catch (e) {
   console.error('Pronóstico falló (el panel lo pedirá en vivo):', e.message);
+}
+
+// Varios modelos (GFS, ICON, ECMWF): cada 6 h alcanza (salen corridas nuevas 4 veces por día) y cuida la cuota.
+const reusedM = process.env.REUSE_MODELS ? await published(process.env.REUSE_MODELS, 330) : null;
+if (reusedM) {
+  await writeFile(`${dir}/modelos.json`, JSON.stringify(reusedM));
+  console.log(`modelos.json: reusado (generado ${reusedM.generated})`);
+} else try {
+  const m = await buildModels();
+  await writeFile(`${dir}/modelos.json`, JSON.stringify(m));
+  console.log(`modelos.json: ${m.pts.length} puntos · ${m.modelos.map((n) => `${n} ${m.ok[n] ? 'ok' : 'SIN DATOS'}`).join(' · ')}`);
+} catch (e) {
+  console.error('Modelos fallaron (se sigue sin comparar):', e.message);
 }
 
 let smn;

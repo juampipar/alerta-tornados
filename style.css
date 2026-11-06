@@ -370,3 +370,5 @@ footer p { margin: 4px 0; }
 .hpubs { margin: 8px 0 0; padding-left: 18px; font-size: .84rem; color: #c9d3e8; display: grid; gap: 4px; }
 .hpubs li.hot { color: #ff7a90; }
 .hpubs a { color: var(--ac); }
+.agree { font-weight: 700; }
+.agree.alto { color: var(--ok); } .agree.medio { color: var(--warn); } .agree.bajo { color: var(--orange); }

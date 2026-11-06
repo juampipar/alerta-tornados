@@ -62,6 +62,9 @@ La sección **📒 Historial** muestra cuántos avistajes de rotación, embudo o
 - El panel dice cuánto corrigió ("Corregido con N días: las tormentas aparecieron X km al este y Y h más tarde") o cuántos días faltan para empezar.
 - La corrección está en `historial.json` (`sesgo`). La usan el panel y las alertas de Telegram (que la leen del historial publicado). El resumen `brief.json` guarda además `hora_pico_modelo` y `centro_modelo`: el historial mide el error contra el modelo sin corregir, para que la corrección no se mida contra sí misma.
 
+## Varios modelos (GFS, ICON, ECMWF)
+`lib/modelos.mjs`. Cada 6 h (`modelos.json`, reusado entre corridas para cuidar la cuota de Open-Meteo) se calcula el mismo índice con **GFS, ICON y ECMWF por separado**, en los pueblos más una grilla de 1,5°. Para cada zona de caza se ve el máximo de cada modelo cerca de la zona y a qué hora: si los tres llegan a 45 o más, la zona es confiable; si solo uno la ve, es dudosa. La ventana de horas se ensancha para incluir los picos de los modelos que coinciden. Lo muestran el panel ("🧮 Modelos: GFS 72 (17:00) · ICON 65 (18:00) · ECMWF 70 (19:00) → 3 de 3"), Telegram y el resumen para la IA. Un modelo sin datos útiles se descarta solo.
+
 ## Cómo se actualiza
 El workflow `Publicar panel` corre **cada 10 minutos** (y en cada push a `main`). El pronóstico se recalcula cada 2 horas (cuota gratuita de Open-Meteo); en las otras corridas solo se renuevan los avisos del SMN (los de muy corto plazo duran 1–2 h): `scripts/build-data.mjs` baja el pronóstico de Open-Meteo y los avisos del SMN, genera `data/forecast.json` y `data/smn.json`, y publica en GitHub Pages. Si el archivo de pronóstico falta o es viejo, el panel lo pide directo a Open-Meteo.
 

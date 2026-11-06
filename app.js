@@ -3,6 +3,7 @@ import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 import { loadHistory } from './lib/historial-ui.mjs';
 import { initRed, setRedLayer } from './lib/red.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from './lib/sesgo.mjs';
+import { zoneAgreement, widenWindow } from './lib/modelos.mjs';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -423,6 +424,7 @@ function renderHero(rank) {
       <p class="verdict">${verdict(o.z.v)}</p>
       <p class="sub">👁 Parar en ${stopTxt(o)} (${vpSpan(o.vp)})</p>
       <p class="sub">Pico <b>${hm(o.peakH)}</b>${ventTxt(o)} · ${o.dist} km desde ${esc(S.origin.label)} (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
+      ${modelsTxt(o)}
       ${biasTxt()}
       ${routeTxt(o) ? `<p class="sub">${routeTxt(o)}</p>` : ''}
       <p class="sub conftxt">${conf(S.day).txt}</p>
@@ -463,7 +465,7 @@ function renderList(rank) {
     return `<li class="optrow${o.reachable ? '' : ' dim'}" style="--c:${c}">
       <div class="ohead"><span class="sc" style="background:${c}">${o.z.v}</span><b>${k + 1}. Zona ${esc(o.z.name)}</b></div>
       <p>👁 ${stopTxt(o)} · ${vpSpan(o.vp)}</p>
-      <p>Pico <b>${hm(o.peakH)}</b>${ventTxt(o)} · ${o.dist} km (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
+      <p>Pico <b>${hm(o.peakH)}</b>${ventTxt(o)}${modelsTxt(o, true)} · ${o.dist} km (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
       ${routeTxt(o) ? `<p>${routeTxt(o)}</p>` : ''}
       <div class="pbtns"><a class="go" href="${dirLink(o.vp.lat, o.vp.lon)}" target="_blank" rel="noopener">Ruta →</a> <button class="chip optshow" data-k="${k}">Ver en el mapa</button> ${S.pin?.found && k === 0 ? '<span class="pintag">📌 fijado</span>' : `<button class="chip pinbtn" data-k="${k}">📌 Fijar</button>`}</div>
     </li>`;
@@ -551,8 +553,19 @@ function dayZones(date, max = 2) {
   const hourOf = (j) => { const t = S.data.times[j]; return +t.slice(11, 13) + (t.startsWith(date) ? 0 : 24); };
   return findZones(cells, S.data.towns, max).map((z) => {
     const w = zoneWindow(z, S.data.grid.pts, S.data.grid.score, idx, hourOf);
-    return { ...shiftZone(z, S.bias), ventana: correctedWindow(w, S.bias), dt: S.bias?.aplicado ? S.bias.horas : 0 };
+    const dt = S.bias?.aplicado ? S.bias.horas : 0;
+    const acuerdo = zoneAgreement(S.mod, z.ctr, z.r, date); // GFS, ICON y ECMWF por separado
+    return { ...shiftZone(z, S.bias), ventana: widenWindow(correctedWindow(w, S.bias), acuerdo, dt), dt, acuerdo };
   });
+}
+// Qué dice cada modelo de la zona y cuántos coinciden.
+function modelsTxt(o, short = false) {
+  const a = o.z.acuerdo;
+  if (!a) return '';
+  if (short) return ` · <span class="agree ${a.acuerdo}">${a.coinciden}/${a.total} modelos</span>`;
+  const per = a.por_modelo.map((m) => `${m.modelo} <b>${m.v}</b>${m.v >= 45 ? ` (${hm(m.hora + (o.z.dt ?? 0))})` : ''}`).join(' · ');
+  const txt = { alto: 'coinciden todos: zona confiable', medio: 'coinciden algunos', bajo: 'solo uno la ve: zona dudosa' }[a.acuerdo];
+  return `<p class="sub">🧮 Modelos: ${per} → <span class="agree ${a.acuerdo}">${a.coinciden} de ${a.total} ${txt}</span></p>`;
 }
 const ventTxt = (o) => (o.z.ventana ? ` · ventana <b>${hm(o.z.ventana[0])}–${hm(o.z.ventana[1])}</b>` : '');
 // Qué aprendió el panel de los días anteriores (zona y hora).
@@ -970,6 +983,8 @@ loadForecast(); loadSmn(); loadRadar(); loadWrf();
 loadHistory($('#historial'));
 // Corrección aprendida (la calcula el historial en cada corrida).
 fetch('data/historial.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((h) => { if (h?.sesgo) { S.bias = h.sesgo; render(); } }).catch(() => {});
+// Índice con cada modelo por separado (GFS, ICON, ECMWF), para ver si coinciden.
+fetch('data/modelos.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((m) => { if (m?.score) { S.mod = m; render(); } }).catch(() => {});
 initRed($('#red'), {
   map,
   getOrigin: () => S.origin,
