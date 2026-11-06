@@ -24,7 +24,7 @@ Todo corre gratis en **GitHub Actions** (workflow `Publicar panel`, cada ~10–2
 | 1. Pronóstico | `build-data.mjs` | Open-Meteo (modelos globales), cada 2 h | `forecast.json`: potencial 0–100 por pueblo y grilla, ingredientes, movimiento de tormentas |
 | 2. Avisos oficiales | `build-data.mjs` | SMN (CAP), cada corrida | `smn.json`: avisos, incluidos los de muy corto plazo |
 | 3. Lluvia del modelo SMN | `build-wrf.py` | WRF 4 km del SMN (AWS), 4 corridas/día | `wrf/*.png`: lluvia pronosticada hora por hora |
-| 4. Tormentas en vivo | `nowcast.py` | Satélite GOES-19 banda 13 (NOAA, AWS), cada 10 min | `nowcast.json`: núcleos de tormenta (tope, topes que sobresalen, si crecen, movimiento) + zooms `img/nucleo_*.png` |
+| 4. Tormentas en vivo | `nowcast.py` | Satélite GOES-19 banda 13 y rayos GLM (NOAA, AWS), cada 10 min | `nowcast.json`: núcleos de tormenta (tope, topes que sobresalen, si crecen, movimiento, rayos en 10 min y **salto de rayos**) + zooms `img/nucleo_*.png` |
 | 5. Imágenes para la IA | `build-images.py` | GOES (NASA GIBS) + WRF | `img/*.png`: satélite ahora y hace 1 h, visible, lluvia del modelo, con pueblos y avisos dibujados |
 | 6. Decisión y avisos | `alert.mjs` | todo lo anterior + Telegram + OpenStreetMap + Gemini | `brief.json` (resumen para IA) y mensajes de Telegram |
 
@@ -32,6 +32,8 @@ Todo corre gratis en **GitHub Actions** (workflow `Publicar panel`, cada ~10–2
 - **Zonas de caza** (`lib/risk.mjs`): áreas con más potencial; opciones ordenadas por las que llegás a tiempo; 👁 parada en una estación de servicio (OpenStreetMap) al costado del camino de las tormentas; chequeo de si tu ruta cruza su paso.
 - **Tormentas ahora**: el satélite llega con 10–30 min de atraso; cada núcleo se **adelanta** con su movimiento (satélite + pronóstico) para estimar dónde está ahora y en +30/+60 min.
 - **IA (Gemini)**: recibe `brief.json` + las imágenes (incluidos los zooms de alta resolución) y escribe "🤖 Qué haría yo", con reglas de seguridad fijas.
+
+**Rayos (GLM):** para cada núcleo se cuentan los rayos a menos de 30 km en los últimos 10 min y en los 10 anteriores (con el núcleo adelantado según su movimiento). **Salto de rayos** = al menos 5 por minuto y el doble que antes: suele anticipar granizo, viento fuerte o rotación en 10–30 min. Se marca ⚡⚡ en el mapa y dispara el aviso 🛰️ de Telegram en días de caza.
 
 **Mensajes de Telegram:** 🌪️ Día de caza · 🚨 ¡Ya se están formando! (SMN) · 🛰️ Tormenta nueva o creciendo (satélite, días de caza) · 🎯 Modo caza (con tu ubicación en tiempo real: ⚠️ tormenta cerca / 🛰️ se está formando, + zoom del satélite) · 🤖 Qué haría yo.
 
