@@ -3,6 +3,8 @@
 Lee la temperatura de los topes de las nubes (banda 13, infrarrojo, cada 10 minutos) ahora y ~30 minutos
 antes, y busca núcleos de tormenta en el Pasillo: dónde están, qué tan fuertes son (topes fríos y topes
 que sobresalen, "overshooting tops"), si son nuevos o crecen, y hacia dónde se mueven.
+Además cuenta los rayos (GLM, el detector de rayos del mismo satélite, cada 20 segundos) alrededor de cada
+núcleo en los últimos 10 minutos y en los 10 anteriores: un salto brusco suele anticipar el tiempo severo.
 
 Uso: python scripts/nowcast.py _site   →   <out>/data/nowcast.json
 """
@@ -12,7 +14,9 @@ import os
 import re
 import sys
 import tempfile
+import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import netCDF4
@@ -81,6 +85,69 @@ def pick_frames(now):
     target = last[0] - timedelta(minutes=30)
     prev = min((f for f in frames if f[0] <= last[0] - timedelta(minutes=20)), key=lambda f: abs((f[0] - target).total_seconds()), default=None)
     return last, prev
+
+
+def list_glm(t):
+    """Archivos de rayos GLM (cada 20 s) de la hora UTC de `t`, con su hora de inicio."""
+    prefix = f"GLM-L2-LCFA/{t:%Y}/{t.timetuple().tm_yday:03d}/{t:%H}/OR_GLM-L2-LCFA_G19"
+    out, token = [], None
+    while True:  # la lista viene de a 1000: hay ~180 por hora, alcanza con una página, pero por las dudas
+        url = f'{BUCKET}/?list-type=2&prefix={prefix}' + (f'&continuation-token={urllib.parse.quote(token)}' if token else '')
+        x = get(url, 30).decode()
+        for k in re.findall(r'<Key>([^<]+)</Key>', x):
+            m = re.search(r'_s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})', k)
+            if m:
+                ts = datetime(int(m[1]), 1, 1, int(m[3]), int(m[4]), int(m[5]), tzinfo=timezone.utc) + timedelta(days=int(m[2]) - 1)
+                out.append((ts, k))
+        token = (re.findall(r'<NextContinuationToken>([^<]+)</NextContinuationToken>', x) or [None])[0]
+        if not token:
+            return out
+
+
+def glm_flashes(now, minutes=20):
+    """Rayos (lat, lon, minutos antes de `fin`) en el Pasillo durante los últimos `minutes` minutos de datos."""
+    files = sorted(f for f in list_glm(now - timedelta(hours=1)) + list_glm(now) if f[0] <= now)
+    if not files:
+        return None
+    fin = files[-1][0] + timedelta(seconds=20)
+    files = [f for f in files if f[0] >= fin - timedelta(minutes=minutes)]
+
+    # Se bajan en paralelo, pero se leen de a uno: la librería de netCDF/HDF5 no se puede usar desde varios hilos.
+    with ThreadPoolExecutor(8) as ex:
+        datos = list(ex.map(lambda f: get(f'{BUCKET}/{f[1]}', 60), files))
+    lat, lon, age = [], [], []
+    for f, raw in zip(files, datos):
+        ds = netCDF4.Dataset('glm.nc', memory=raw)
+        la = np.asarray(ds.variables['flash_lat'][:], dtype=float)
+        lo = np.asarray(ds.variables['flash_lon'][:], dtype=float)
+        ds.close()
+        ok = (la >= BBOX['s']) & (la <= BBOX['n']) & (lo >= BBOX['w']) & (lo <= BBOX['e'])
+        lat.append(la[ok]); lon.append(lo[ok])
+        age.append(np.full(ok.sum(), (fin - f[0]).total_seconds() / 60))  # minutos antes del final
+    return dict(fin=fin, archivos=len(files), lat=np.concatenate(lat), lon=np.concatenate(lon), age=np.concatenate(age))
+
+
+def add_lightning(cells, t_valid, now, radio=30):
+    """Suma a cada núcleo los rayos a menos de `radio` km en los últimos 10 min y en los 10 anteriores
+    (con el núcleo adelantado según su movimiento) y marca un salto de rayos."""
+    g = glm_flashes(now)
+    if g is None:
+        return None
+    for c in cells:
+        cuenta = []
+        for a, b in ((0, 10), (10, 20)):
+            sel = (g['age'] >= a) & (g['age'] < b)
+            t_mid = g['fin'] - timedelta(minutes=(a + b) / 2)
+            p = (c['lat'], c['lon'])
+            if c.get('mov_deg') is not None and c.get('kmh'):
+                p = move(p, c['mov_deg'], c['kmh'] * (t_mid - t_valid).total_seconds() / 3600)
+            d = np.hypot((g['lat'][sel] - p[0]) * 111.2, (g['lon'][sel] - p[1]) * 111.2 * math.cos(math.radians(p[0])))
+            cuenta.append(int((d <= radio).sum()))
+        c['rayos_10min'], c['rayos_10min_antes'] = cuenta
+        # Salto: al menos 5 rayos por minuto y el doble que en los 10 minutos anteriores.
+        c['salto_rayos'] = cuenta[0] >= 50 and cuenta[0] >= 2 * cuenta[1]
+    return dict(hasta=g['fin'].astimezone(ART).strftime('%H:%M'), archivos=g['archivos'],
+                total_pasillo_10min=int((g['age'] < 10).sum()))
 
 
 _GEO = {}
@@ -338,6 +405,14 @@ def main():
             '_iy': c['iy'], '_ix': c['ix'],
         })
     cells.sort(key=lambda c: (c['tope_min_C'], -c['area_km2']))
+    try:
+        rayos = add_lightning(cells, t_valid, now)
+        if rayos:
+            saltos = sum(1 for c in cells if c.get('salto_rayos'))
+            print(f"rayos GLM: {rayos['archivos']} archivos hasta {rayos['hasta']}, {rayos['total_pasillo_10min']} en el Pasillo en 10 min, {saltos} saltos")
+    except Exception as e:  # sin rayos el resto sigue igual
+        rayos = None
+        print('rayos GLM: falló:', e)
     zooms = make_zooms(cells, grid, t1)
     res = {
         'satelite': 'GOES-19 banda 13 (infrarrojo 10,3 µm)', 'hora': t1.astimezone(ART).strftime('%H:%M'),
@@ -348,7 +423,10 @@ def main():
                      '"topes_sobresalientes" > 0 = la corriente ascendente perfora el yunque: señal típica de supercelda. '
                      '"nueva" = no estaba en la imagen anterior; "creciendo" = se agrandó o se enfrió. "cambio_tope_C" negativo = se intensifica. '
                      'El movimiento (va_hacia/kmh/mov_deg) combina el del satélite con el del pronóstico; '
-                     'con él se estima la posición actual (lat/lon son de la hora del satélite).',
+                     'con él se estima la posición actual (lat/lon son de la hora del satélite). '
+                     '"rayos_10min" = rayos a menos de 30 km en los últimos 10 min (GLM); "salto_rayos" = la tasa se duplicó '
+                     'y pasa de 5 por minuto: suele anticipar granizo, viento fuerte o rotación en 10–30 min.',
+        'rayos': rayos,
         'celulas': [{k: v for k, v in c.items() if not k.startswith('_')} for c in cells[:25]],
     }
     json.dump(res, open(os.path.join(OUT, 'nowcast.json'), 'w'), ensure_ascii=False)

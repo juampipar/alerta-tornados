@@ -372,3 +372,4 @@ footer p { margin: 4px 0; }
 .hpubs a { color: var(--ac); }
 .agree { font-weight: 700; }
 .agree.alto { color: var(--ok); } .agree.medio { color: var(--warn); } .agree.bajo { color: var(--orange); }
+.otmark.salto span { font-size: 1.15rem; filter: drop-shadow(0 0 3px #ffd43b) drop-shadow(0 0 2px #000); }

@@ -494,7 +494,7 @@ if (state.chase.on && state.chase.loc) {
 for (const m of chaseOut) messages.push(m);
 
 /* ---------- 🛰️ Aviso del satélite en días de caza (sin modo caza) ---------- */
-// Tormenta nueva o creciendo, fuerte o con topes que sobresalen, en cualquier parte del Pasillo.
+// Tormenta nueva o creciendo, fuerte o con topes que sobresalen, o con un salto de rayos (GLM), en cualquier parte del Pasillo.
 // Una vez por tormenta y como máximo un aviso cada 30 min. Si el modo caza está prendido, ese avisa (con tu ubicación).
 let satEvent = null;
 const satHunt = REPLAY && env.REPLAY_NOCHASE ? true : huntDay;
@@ -505,19 +505,21 @@ if (!state.chase.on && satHunt && (REPLAY || !quiet)) {
   state.satSeen ??= {};
   for (const [k, t] of Object.entries(state.satSeen)) if (NOW - t > 4 * 3600e3) delete state.satSeen[k];
   const key = (c) => `${(Math.round(c.lat * 5) / 5).toFixed(1)},${(Math.round(c.lon * 5) / 5).toFixed(1)}`;
-  const cand = (fresh ? nc.celulas : []).filter((c) => (c.tendencia === 'nueva' || c.tendencia === 'creciendo')
-    && (c.fuerza !== 'moderada' || c.topes_sobresalientes > 0) && !state.satSeen[key(c)]);
+  const cand = (fresh ? nc.celulas : []).filter((c) => (c.salto_rayos || ((c.tendencia === 'nueva' || c.tendencia === 'creciendo')
+    && (c.fuerza !== 'moderada' || c.topes_sobresalientes > 0))) && !state.satSeen[key(c)]);
   if (cand.length && NOW - (state.satLast ?? 0) > 30 * 60e3) {
-    const cores = cand.sort((a, b) => b.topes_sobresalientes - a.topes_sobresalientes || a.tope_min_C - b.tope_min_C).slice(0, 3).map((c0) => {
+    const cores = cand.sort((a, b) => (b.salto_rayos ? 1 : 0) - (a.salto_rayos ? 1 : 0) || b.topes_sobresalientes - a.topes_sobresalientes || a.tope_min_C - b.tope_min_C).slice(0, 3).map((c0) => {
       const est = coreAt(c0, nc.hora_utc, NOW);
       return { ...c0, lat: est.lat, lon: est.lon, edadMin: Math.round(est.edadMin), d: Math.round(km(HOME, est)), from: rumbo(bearing(HOME, est)) };
     });
     for (const c of cand) state.satSeen[key(c)] = NOW; // las demás de esta tanda tampoco se repiten
     state.satLast = NOW;
     satEvent = { cores };
-    const line = (c) => `• <b>${esc(c.fuerza)}</b> (${c.tope_min_C} °C${c.topes_sobresalientes ? `, ⚡ ${c.topes_sobresalientes} topes que sobresalen` : ''}) · <b>${esc(c.tendencia)}</b>\n   ${esc(c.cerca_de)} · a ${c.d} km al ${c.from} de Leones${c.va_hacia ? ` · va al ${c.va_hacia}${c.kmh ? ` a ~${c.kmh} km/h` : ''}` : ''}`;
+    const rayos = (c) => (c.rayos_10min == null ? '' : c.salto_rayos ? `\n   ⚡⚡ <b>Salto de rayos</b>: ${c.rayos_10min} en 10 min (antes ${c.rayos_10min_antes}) · suele anticipar granizo, viento o rotación en 10–30 min`
+      : c.rayos_10min ? ` · ${c.rayos_10min} rayos en 10 min` : '');
+    const line = (c) => `• <b>${esc(c.fuerza)}</b> (${c.tope_min_C} °C${c.topes_sobresalientes ? `, ⚡ ${c.topes_sobresalientes} topes que sobresalen` : ''}) · <b>${esc(c.tendencia)}</b>${rayos(c)}\n   ${esc(c.cerca_de)} · a ${c.d} km al ${c.from} de Leones${c.va_hacia ? ` · va al ${c.va_hacia}${c.kmh ? ` a ~${c.kmh} km/h` : ''}` : ''}`;
     messages.push([
-      `🛰️ <b>Tormenta ${cores[0].tendencia === 'nueva' ? 'nueva' : 'creciendo'} en el Pasillo</b> <i>(satélite de las ${nc.hora} h, posición estimada ahora)</i>`,
+      `🛰️ <b>${cores[0].salto_rayos ? 'Salto de rayos en una tormenta' : `Tormenta ${cores[0].tendencia === 'nueva' ? 'nueva' : 'creciendo'}`} en el Pasillo</b> <i>(satélite de las ${nc.hora} h, posición estimada ahora)</i>`,
       ...cores.map(line),
       `<a href="${PANEL}">📡 Mirá el radar y el mapa</a> · si salís, mandá /caza y compartí tu ubicación`,
     ].join('\n'));
