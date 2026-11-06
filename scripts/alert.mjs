@@ -11,6 +11,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, nearestStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
+import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -44,6 +45,10 @@ const dayName = (d) => `${new Date(d + 'T12:00:00Z').toLocaleDateString('es-AR',
 const data = await readJson(`${dir}/forecast.json`);
 const smn = await readJson(`${dir}/smn.json`);
 const state = (await readJson(STATE)) || {};
+// Corrección aprendida (zona y hora) del historial publicado. Sin ella, se usa el modelo tal cual.
+const BIAS = await (async () => {
+  try { const r = await fetch(env.PUBLISHED_HIST || PANEL + 'data/historial.json', { cache: 'no-store' }); return r.ok ? (await r.json()).sesgo ?? null : null; } catch { return null; }
+})();
 state.smn ??= {}; state.days ??= {};
 // v2: los puntajes guardados antes eran de la zona mal calculada (sobre el río o Uruguay): se olvidan.
 if (state.v !== 2) { state.days = {}; state.v = 2; }
@@ -77,7 +82,22 @@ function zonesFor(date, max = 2) {
     for (const j of idx) if ((data.grid.score[k][j] ?? 0) > v) { v = data.grid.score[k][j]; i = j; }
     return { lat, lon, v, i };
   });
-  return huntZones(cells, data.towns, max);
+  // Igual que el panel: ventana de horas y corrección aprendida. ctr_modelo queda para el historial,
+  // que mide el error contra el modelo sin corregir (si no, la corrección se mediría contra sí misma).
+  const hourOf = (j) => { const t = data.times[j]; return +t.slice(11, 13) + (t.startsWith(date) ? 0 : 24); };
+  return huntZones(cells, data.towns, max).map((z) => ({
+    ...shiftZone(z, BIAS), ctr_modelo: z.ctr,
+    ventana: correctedWindow(zoneWindow(z, data.grid.pts, data.grid.score, idx, hourOf), BIAS),
+    dt: BIAS?.aplicado ? BIAS.horas : 0,
+  }));
+}
+const ventana = (z) => (z.ventana ? `${clock(z.ventana[0] * 60)}–${clock(z.ventana[1] * 60)}` : null);
+function biasLine() {
+  if (!BIAS?.aplicado) return null;
+  const d = Math.round(Math.hypot(BIAS.este_km, BIAS.norte_km));
+  const dir = d ? `${d} km al ${rumbo((Math.atan2(BIAS.este_km, BIAS.norte_km) * 180) / Math.PI)}` : 'en el mismo lugar';
+  const hr = Math.abs(BIAS.horas) < 0.25 ? 'a la hora pronosticada' : `${Math.abs(BIAS.horas).toFixed(1).replace('.', ',')} h ${BIAS.horas > 0 ? 'más tarde' : 'más temprano'}`;
+  return `📚 <i>Corregido con ${BIAS.dias_usados} días: las tormentas venían apareciendo ${dir} y ${hr}.</i>`;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Otras zonas a las que se puede ir (2.ª a 4.ª), una línea cada una.
@@ -157,7 +177,8 @@ async function huntMessage(date, label, rank, prev) {
     score >= MIN ? `🌪️ <b>DÍA DE CAZA · ${label}</b> <i>${dayName(date)}</i>` : `🧪 <b>Prueba · ${label}</b> <i>${dayName(date)}</i> · no llega a día de caza`,
     `Potencial de tornado <b>${lv.label.toUpperCase()} · ${score}/100</b>${prev >= 0 ? ` <i>(subió de ${prev})</i>` : ''}`,
     '',
-    `🎯 <b>Zona ${esc(o.z.name)}</b> · pico a las <b>${clock(o.peakH * 60)} h</b>`,
+    `🎯 <b>Zona ${esc(o.z.name)}</b> · pico a las <b>${clock(o.peakH * 60)} h</b>${ventana(o.z) ? ` · ventana ${ventana(o.z)}` : ''}`,
+    biasLine(),
     `👁 Parar en: ${stopLine(o)}`,
     o.stop?.kind === 'pueblo' ? `   (no encontré estación de servicio cerca del punto ideal: es el pueblo más cercano) · <a href="${ruta(o.vp)}">Ruta</a>`
       : `   Al ${side} del camino de las tormentas · <a href="${ruta(o.vp)}">Ruta a la parada</a>`,
@@ -169,7 +190,7 @@ async function huntMessage(date, label, rank, prev) {
       : o.mspd != null && o.reachable ? '✅ Con ese horario el camino no cruza por delante de las tormentas' : null,
     o.mspd != null ? `➡️ Las tormentas van hacia el <b>${rumbo(o.mdir)}</b> a ${o.mspd} km/h` : null,
     '',
-    `<b>Ingredientes de la zona</b> (${esc(t.name)}, ${clock(o.peakH * 60)} h)`,
+    `<b>Ingredientes de la zona</b> (${esc(t.name)}, ${clock((o.peakH - (o.z.dt ?? 0)) * 60)} h, según el modelo)`,
     ...ing,
     ...(others.length ? ['', '<b>Otras opciones para ir</b>', ...others] : []),
     '',
@@ -252,7 +273,9 @@ async function buildBrief() {
       dia: label, fecha: date,
       opciones: opts.map((o, k) => ({
         n: k + 1, zona: o.z.name, potencial: o.z.v, radio_km: r0(o.z.r), centro: { lat: +o.z.ctr.lat.toFixed(2), lon: +o.z.ctr.lon.toFixed(2) },
-        hora_pico: clock(o.peakH * 60),
+        hora_pico: clock(o.peakH * 60), ventana_horas: ventana(o.z),
+        // Sin la corrección aprendida: el historial mide el error contra esto.
+        hora_pico_modelo: clock((o.peakH - (o.z.dt ?? 0)) * 60), centro_modelo: { lat: +o.z.ctr_modelo.lat.toFixed(2), lon: +o.z.ctr_modelo.lon.toFixed(2) },
         parada: { nombre: o.stop?.label ?? null, tipo: o.stop?.kind ?? null, cerca_de: o.place?.place ?? null, ruta: o.place?.road ?? null, lat: +o.vp.lat.toFixed(3), lon: +o.vp.lon.toFixed(3) },
         km_desde_leones: o.dist, horas_de_viaje: +o.drive.toFixed(1), salir: clock(o.leave * 60), es_tarde: o.late, llega_a_tiempo: o.reachable,
         camino_cruza_tormentas: o.hit ? clock(o.hit.h * 60) : false,
