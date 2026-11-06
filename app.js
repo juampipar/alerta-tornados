@@ -1,6 +1,7 @@
 import { HOME, POINTS, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, nearestStop, plainKey, bearingTo, coreAt } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 import { loadHistory } from './lib/historial-ui.mjs';
+import { initRed, setRedLayer } from './lib/red.mjs';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -14,7 +15,7 @@ const WINDOW = [11, 2]; // de 11 h a 2 h del día siguiente: en el Pasillo mucha
 const S = {
   data: null, smn: null, all: false, day: 0, hour: Math.min(22, Math.max(11, nowArt().hour)), max: true,
   origin: { ...HOME, label: 'Leones', fallback: true }, // respaldo hasta que el usuario elija desde dónde sale
-  layers: { zonas: true, smn: true, nucleos: true, lluvia: false, radar: false, sat: false, ir: false }, // RainViewer casi no cubre el centro de Argentina: apagado de entrada
+  layers: { zonas: true, smn: true, red: true, nucleos: true, lluvia: false, radar: false, sat: false, ir: false }, // RainViewer casi no cubre el centro de Argentina: apagado de entrada
 };
 
 /* ---------------- Mapa ---------------- */
@@ -190,6 +191,7 @@ $$('#layers .chip').forEach((b) => (b.onclick = () => {
   if (k === 'lluvia') renderWrf();
   if (k === 'nucleos') renderNowcast();
   if (k === 'smn') on ? smnLayer.addTo(map) : smnLayer.remove();
+  if (k === 'red') setRedLayer(on);
   if (k === 'radar') { frames.forEach((f) => (on ? f.addTo(map) : f.remove())); if (!on) stamp(''); }
   if (k === 'sat' || k === 'ir') setSat(k, on);
 }));
@@ -948,6 +950,16 @@ function renderZones() {
 
 loadForecast(); loadSmn(); loadRadar(); loadWrf();
 loadHistory($('#historial'));
+initRed($('#red'), {
+  map,
+  getOrigin: () => S.origin,
+  showOnMap: (p) => { showTab('map'); $('.mapcard').scrollIntoView({ behavior: 'smooth', block: 'start' }); map.flyTo([p.lat, p.lon], 10); },
+  pickOnMap: (cb) => {
+    showTab('map'); $('.mapcard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    map.getContainer().style.cursor = 'crosshair';
+    map.once('click', (ev) => { map.getContainer().style.cursor = ''; cb({ lat: ev.latlng.lat, lon: ev.latlng.lng }); });
+  },
+});
 
 // Pestaña Windy: radar ahora (incluye los radares del SMN), tormentas pronosticadas o CAPE,
 // centrado en tu zona de caza (opción 1) si hay una; si no, en tu punto de salida.

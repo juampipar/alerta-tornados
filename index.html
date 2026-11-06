@@ -24,7 +24,9 @@
     </div>
   </div>
   <div class="status" id="status"></div>
+  <a class="howlink" href="#red">🎥 Red</a>
   <a class="howlink" href="#historial">📒 Historial</a>
+  <button class="howlink authbtn" id="authbtn" type="button">👤 Entrar</button>
   <a class="howlink" href="#como-usar">❓ Cómo usar</a>
   <div class="seg" id="days" role="tablist" aria-label="Día"></div>
 </header>
@@ -51,6 +53,7 @@
       <div class="chips" id="layers">
         <button data-l="zonas" class="chip on">Potencial</button>
         <button data-l="smn" class="chip on">Avisos SMN</button>
+        <button data-l="red" class="chip on" title="Lo que publicó la gente: 🎥 video, 📷 foto, 💬 texto. Rojo = rotación, embudo o tornado">🎥 Publicaciones</button>
         <button data-l="nucleos" class="chip on" title="Tormentas detectadas ahora por satélite (topes fríos): amarillo moderada, rojo fuerte, lila muy fuerte; ⚡ = topes que sobresalen">Tormentas ahora</button>
         <button data-l="lluvia" class="chip" title="Lluvia pronosticada por el modelo del SMN (4 km): como un radar del futuro">Lluvia SMN</button>
         <button data-l="radar" class="chip" title="RainViewer: casi sin cobertura en el centro de Argentina">Radar RV</button>
@@ -103,6 +106,8 @@
   </aside>
 
 </main>
+
+<section class="red" id="red"></section>
 
 <section class="history" id="historial"></section>
 
@@ -288,6 +293,7 @@
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
