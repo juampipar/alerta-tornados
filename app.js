@@ -428,7 +428,7 @@ function renderHero(rank) {
       <p class="sub conftxt">${conf(S.day).txt}</p>
       <div class="pbtns"><a class="go" href="${dirLink(o.vp.lat, o.vp.lon)}" target="_blank" rel="noopener">Ruta a la parada →</a> ${S.pin?.found ? '' : '<button class="chip pinbtn" data-k="0">📌 Fijar este plan</button>'} <a class="chip" href="#plan">Plan hora por hora ↓</a></div>
     </div>
-    <p class="mlegend">Ingredientes de la zona (en ${esc(o.town.name)} a las ${hm(o.peakH)}):</p>
+    <p class="mlegend">Ingredientes de la zona (en ${esc(o.town.name)} a las ${hm(o.peakH - (o.z.dt ?? 0))}, según el modelo):</p>
     <div class="metrics">${metricsHtml(ingAt(o.town, o.i))}</div>
     <p class="mlegend"><span class="sw sw-good">rojo</span> favorece tornados · <span class="sw sw-mid">naranja</span> a medias · <span class="sw sw-low">gris</span> no ayuda · <a href="#guia">Guía: cómo leerlo y qué hacer ↓</a></p>
     <details class="how"><summary>¿Cómo se calcula el puntaje?</summary><ul>

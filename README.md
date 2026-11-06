@@ -60,7 +60,7 @@ La sección **📒 Historial** muestra cuántos avistajes de rotación, embudo o
 - Con **3 días o más** corrige el pronóstico con la **mediana** de esos errores (un día raro no la arrastra), achicada cuando hay pocos días (con 3 días pesa la mitad; con 30, casi todo) y con topes de 80 km y 3 h.
 - **Zona**: el centro se corre. **Hora**: el pico se corre. **Ventana de horas**: las horas seguidas alrededor del pico en que la zona está a menos de 10 puntos de su máximo, corrida por lo aprendido y ensanchada según cuánto varía el error de un día a otro.
 - El panel dice cuánto corrigió ("Corregido con N días: las tormentas aparecieron X km al este y Y h más tarde") o cuántos días faltan para empezar.
-- La corrección está en `historial.json` (`sesgo`). Por ahora la usa el panel; las alertas de Telegram todavía no.
+- La corrección está en `historial.json` (`sesgo`). La usan el panel y las alertas de Telegram (que la leen del historial publicado). El resumen `brief.json` guarda además `hora_pico_modelo` y `centro_modelo`: el historial mide el error contra el modelo sin corregir, para que la corrección no se mida contra sí misma.
 
 ## Cómo se actualiza
 El workflow `Publicar panel` corre **cada 10 minutos** (y en cada push a `main`). El pronóstico se recalcula cada 2 horas (cuota gratuita de Open-Meteo); en las otras corridas solo se renuevan los avisos del SMN (los de muy corto plazo duran 1–2 h): `scripts/build-data.mjs` baja el pronóstico de Open-Meteo y los avisos del SMN, genera `data/forecast.json` y `data/smn.json`, y publica en GitHub Pages. Si el archivo de pronóstico falta o es viejo, el panel lo pide directo a Open-Meteo.
