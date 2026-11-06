@@ -8,6 +8,7 @@ import { mirrorHourly } from '../../lib/entrenar.mjs';
 
 const store = (process.argv[2] || '.datos') + '/entrenamiento';
 const MAX = +(process.argv[3] || 2000);
+const FIN = Date.now() + +(process.env.TIEMPO_MAX_MIN || 80) * 60e3; // corta antes del límite del workflow y guarda lo hecho
 const TANDA = 20;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const { casos } = JSON.parse(await readFile(`${store}/casos.json`, 'utf8'));
@@ -28,6 +29,7 @@ for (const c of orden) {
 const r2 = (x) => (x == null ? null : Math.round(x * 10) / 10);
 let ok = 0, sin = 0, corte = null, pedidos = 0;
 for (const grupo of grupos) {
+  if (!corte && Date.now() > FIN) corte = 'tiempo máximo de la corrida';
   if (corte) break;
   const q = new URLSearchParams({
     latitude: grupo.map((c) => c.lat).join(','), longitude: grupo.map((c) => c.lon).join(','),
@@ -59,9 +61,9 @@ for (const grupo of grupos) {
     amb[c.id] = { cape: m.cape, cin: m.cin, li: m.li, td: m.td, lcl: m.lcl, shear: r2(m.shear), ll: r2(m.ll), srh: m.srh, indice: scoreOf(m) };
     ok++;
   });
-  // Límites gratuitos: 5000 "llamadas" por hora y 10000 por día; cada lugar con ~25 variables cuenta como ~2,5,
-  // o sea ~50 por pedido de 20 lugares. Un pedido cada 40 s ≈ 4500 por hora; 2000 casos por noche ≈ 5000 por día.
-  await sleep(40e3);
+  // Límites gratuitos: 5000 "llamadas" por hora y 10000 por día. Cada lugar con ~25 variables cuenta como ~2,5 y
+  // un pedido trae ~9 lugares (~22 llamadas): uno cada 18 s ≈ 4400 por hora; 2000 casos por noche ≈ 5000 por día.
+  await sleep(18e3);
 }
 await writeFile(`${store}/ambientes.json`, JSON.stringify(amb));
 const total = Object.keys(amb).length;
