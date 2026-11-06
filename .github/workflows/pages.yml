@@ -14,7 +14,7 @@ on:
         description: 'Repetir un momento pasado en modo caza desde Leones (hora UTC, ej. 2026-11-03T21:40). No publica el panel.'
         type: string
         default: ''
-permissions: { contents: write, pages: write, id-token: write, issues: read } # contents: write solo para guardar el historial en la rama datos
+permissions: { contents: write, pages: write, id-token: write } # contents: write solo para guardar el historial en la rama datos
 concurrency: { group: pages, cancel-in-progress: false }
 jobs:
   deploy:

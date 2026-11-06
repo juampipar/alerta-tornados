@@ -1,37 +1,18 @@
 // Actualiza el historial (qué se pronosticó y qué pasó). Uso: node scripts/historial.mjs <_site> <carpeta de la rama datos>
-// Lee <_site>/data/{forecast,brief,smn,nowcast}.json y los reportes (issues "Reporte de caza" del dueño del repo),
+// Lee <_site>/data/{forecast,brief,smn,nowcast}.json y las publicaciones de la red (Supabase),
 // escribe <datos>/historial.json y una copia en <_site>/data/historial.json para el panel.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { updateHistory, parseReport, artDate } from '../lib/historial.mjs';
+import { updateHistory, artDate } from '../lib/historial.mjs';
 import { SUPA_URL, SUPA_KEY } from '../lib/red-config.mjs';
 
 const site = process.argv[2] || '_site', store = process.argv[3] || '.datos';
 const readJson = async (p) => { try { return JSON.parse(await readFile(p, 'utf8')); } catch { return null; } };
 
-async function reports() {
-  const repo = process.env.GITHUB_REPOSITORY, token = process.env.GITHUB_TOKEN;
-  if (!repo || !token) return null; // sin acceso: se dejan los reportes que ya había
-  try {
-    const r = await fetch(`https://api.github.com/repos/${repo}/issues?state=all&per_page=100&sort=created&direction=desc`, {
-      headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'user-agent': 'alerta-tornados' },
-    });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const issues = await r.json();
-    // Solo los del dueño del repo: cualquiera puede abrir un issue en un repo público.
-    return issues
-      .filter((i) => !i.pull_request && /^reporte de caza/i.test(i.title) && i.author_association === 'OWNER')
-      .map(parseReport).filter(Boolean);
-  } catch (e) {
-    console.error('Reportes: no se pudieron leer:', e.message);
-    return null;
-  }
-}
-
 // Publicaciones de la red de los últimos 8 días (las visibles; la clave publishable solo ve esas).
 async function publicaciones() {
   const now = Date.now(), desde = artDate(now - 8 * 864e5);
   try {
-    const q = new URLSearchParams({ select: 'id,visto_en,dia_tormenta,lat,lon,que_vio,video_url,foto_path,autor_nombre', dia_tormenta: `gte.${desde}`, order: 'visto_en.asc', limit: '1000' });
+    const q = new URLSearchParams({ select: 'id,visto_en,dia_tormenta,lat,lon,que_vio,video_url,autor_nombre', dia_tormenta: `gte.${desde}`, order: 'visto_en.asc', limit: '1000' });
     const r = await fetch(`${SUPA_URL}/rest/v1/publicaciones?${q}`, { headers: { apikey: SUPA_KEY } });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return { desde, items: await r.json() };
@@ -50,7 +31,6 @@ hist = updateHistory(hist, {
   brief: await readJson(`${d}/brief.json`),
   smn: await readJson(`${d}/smn.json`),
   nowcast: await readJson(`${d}/nowcast.json`),
-  reports: await reports(),
   publicaciones: await publicaciones(),
 });
 const out = JSON.stringify(hist);
