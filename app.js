@@ -1,5 +1,6 @@
 import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, nearestStop, plainKey, bearingTo, coreAt } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
+import { loadHistory } from './lib/historial-ui.mjs';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -893,6 +894,7 @@ function renderZones() {
 }
 
 loadForecast(); loadSmn(); loadRadar(); loadWrf();
+loadHistory($('#historial'));
 
 // Pestaña Windy: radar ahora (incluye los radares del SMN), tormentas pronosticadas o CAPE,
 // centrado en tu zona de caza (opción 1) si hay una; si no, en Leones.

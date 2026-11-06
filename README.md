@@ -38,6 +38,15 @@ Todo corre gratis en **GitHub Actions** (workflow `Publicar panel`, cada ~10–2
 
 **Límites:** no hay radar de velocidad (el SMN no lo publica): el gancho y el giro no se ven; el satélite muestra topes fríos y topes que sobresalen (señales de supercelda), no tornados. Las posiciones estimadas y los movimientos son aproximados.
 
+## Historial y verificación
+Cada corrida guarda en `historial.json` (rama **`datos`** del repo; copia en `data/historial.json` del panel), por **día de tormenta** (de 6 h a 6 h, porque muchas tormentas siguen después de medianoche):
+- **Pronóstico**: el de la noche anterior (`pron_dia_antes`) y el de la mañana, hasta las 12 h (`pron_manana`): zona de caza, potencial, hora pico, centro.
+- **Avisos del SMN**: todos los del día, sin repetir, con su centro aproximado (los de corto plazo marcados).
+- **Satélite**: las señales fuertes de `nowcast.json` (topes < −63 °C o topes que sobresalen), hasta 60 por día.
+- **Tus reportes**: el formulario "¿Qué viste?" del panel abre un issue de GitHub ya armado (título "Reporte de caza …"). Solo se leen los issues del dueño del repo. Si editás el issue, el historial se actualiza.
+
+El panel muestra la sección **📒 Historial** con cada día: qué marcó el panel, avisos a corto plazo y señales del satélite a menos de 150 km de la zona, tu reporte y un link al satélite de esa tarde (NASA Worldview). Con una temporada de datos se pueden ajustar los umbrales del índice.
+
 ## Cómo se actualiza
 El workflow `Publicar panel` corre **cada 10 minutos** (y en cada push a `main`). El pronóstico se recalcula cada 2 horas (cuota gratuita de Open-Meteo); en las otras corridas solo se renuevan los avisos del SMN (los de muy corto plazo duran 1–2 h): `scripts/build-data.mjs` baja el pronóstico de Open-Meteo y los avisos del SMN, genera `data/forecast.json` y `data/smn.json`, y publica en GitHub Pages. Si el archivo de pronóstico falta o es viejo, el panel lo pide directo a Open-Meteo.
 

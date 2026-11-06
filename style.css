@@ -83,7 +83,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .m.good { border-color: rgba(255, 59, 92, .55); } .m.good em { color: #ff7a90; }
 .m.mid { border-color: rgba(255, 140, 26, .5); } .m.mid em { color: var(--orange); }
 .m.low em { color: var(--mut); }
-.hero .go, .row .go, .pbtns .go { display: inline-flex; align-items: center; gap: 6px; background: var(--ac); color: #04121f; padding: 8px 14px; border-radius: 9px; font-weight: 700; text-decoration: none; font-size: .85rem; margin-top: 6px; }
+.hero .go, .row .go, .pbtns .go, .hform .go { display: inline-flex; align-items: center; gap: 6px; background: var(--ac); color: #04121f; padding: 8px 14px; border-radius: 9px; font-weight: 700; text-decoration: none; font-size: .85rem; margin-top: 6px; }
 
 /* Map */
 .mapcard { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -282,3 +282,32 @@ footer p { margin: 4px 0; }
 .pintag { font-size: .8rem; color: #9be8c4; align-self: center; }
 .otmark span { display: inline-block; transform: translate(-50%, -110%); font-size: 1rem; filter: drop-shadow(0 0 2px #000); }
 .nclabel span { display: inline-block; transform: translate(4px, -50%); font-size: .68rem; font-weight: 700; color: var(--c); text-shadow: 0 0 3px #000, 0 0 3px #000; }
+
+/* Historial */
+.history { max-width: 1400px; margin: 0 auto; padding: 0 16px 16px; }
+.history h2 { margin: 0 0 6px; }
+.hsum { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin: 12px 0; }
+.hsum > div { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+.hsum b { display: block; font-size: 1.3rem; }
+.hsum span { font-size: .78rem; color: var(--mut); }
+.hform { margin: 10px 0 14px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg2); }
+.hform summary { cursor: pointer; font-weight: 700; }
+.hform form { display: grid; gap: 10px; margin-top: 10px; font-size: .9rem; }
+.hform label { display: grid; gap: 4px; color: #c9d3e8; }
+.hform fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px 8px; display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; }
+.hform fieldset label { display: inline-flex; align-items: center; gap: 6px; }
+.hform legend { color: var(--mut); font-size: .8rem; padding: 0 4px; }
+.hform input[type="date"], .hform input[name="donde"], .hform textarea { background: var(--card); color: var(--tx); border: 1px solid var(--line2); border-radius: 8px; padding: 8px; font: inherit; max-width: 100%; }
+.hform .go { justify-self: start; border: 0; cursor: pointer; }
+.hdays { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.hday { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.hdate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.hver { font-size: .8rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line2); color: var(--mut); }
+.hver.ok { color: var(--ok); border-color: rgba(61, 220, 151, .5); }
+.hver.no { color: var(--mut); }
+.hver.warn { color: var(--orange); border-color: rgba(255, 140, 26, .5); }
+.hgrid { display: grid; gap: 8px 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); font-size: .86rem; color: #c9d3e8; }
+.hgrid span { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--mut); }
+.hgrid small { display: block; color: var(--mut); }
+.hgrid a, .history .linkbtn { color: var(--ac); }
+.linkbtn { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; }
