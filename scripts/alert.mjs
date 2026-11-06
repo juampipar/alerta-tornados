@@ -13,6 +13,7 @@ import { dirname } from 'node:path';
 import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, nearestStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from '../lib/modelos.mjs';
+import { amenazas, valeAvisar, revisar, aciertos, NIVEL } from '../lib/tormenta.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -546,6 +547,48 @@ if (brief && messages.length && !(chaseOut.length && !chaseEvent && messages.len
     : 'el día de caza: a dónde ir, a qué hora salir y qué hacer al llegar';
   const adv = await aiAdvice(brief, focus);
   if (adv) messages.push(`🤖 <b>Qué haría yo</b> <i>(IA, con los datos de arriba)</i>\n${esc(adv).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^\s*[*-]\s+/gm, '• ')}\n<i>Es una sugerencia: manda el radar y tu criterio.</i>`);
+}
+
+/* ---------- ⛈️ Tormenta fuerte o granizo hacia Leones (todos los días, no solo días de caza) ---------- */
+// Avisa con qué seguridad llega y qué tan probable es el granizo, y lleva la cuenta de cuántas veces acertó.
+// Con el modo caza prendido no se manda (ese ya avisa con tu ubicación en vivo).
+if (!REPLAY) {
+  let nc = null;
+  try { nc = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8')); } catch { /* sin satélite */ }
+  const me = HOME;
+  state.stormLog = revisar(state.stormLog ?? [], { me, nc, smn, now: NOW }).slice(-60);
+  const xs = amenazas({ me, nc, smn, data, now: NOW });
+  const x = xs.find((t) => valeAvisar(t, { noche: quiet }));
+  const R = { alta: 3, media: 2, baja: 1 }, G = { probable: 3, posible: 2, 'poco probable': 1 };
+  const st = state.storm ?? {};
+  if (x && !state.chase.on) {
+    const sube = R[x.llega] > (st.llega ?? 0) || G[x.granizo.nivel] > (st.gran ?? 0);
+    if (!st.activa || sube || NOW - (st.last ?? 0) > 45 * 60e3) {
+      const n = NIVEL[x.llega], c = x.core;
+      const hora = new Date(NOW + (x.eta ?? 0) * 60e3).toISOString();
+      const cuando = x.eta == null ? ' · en las próximas horas' : x.eta > 0 ? ` · en ~${x.eta} min (≈ ${hhmm(hora)} h)` : ' · <b>ya está encima</b>';
+      const ac = aciertos(state.stormLog);
+      const acTxt = ['alta', 'media', 'baja'].filter((k) => ac[k]).map((k) => `${NIVEL[k].emoji} ${ac[k].llegaron} de ${ac[k].total}`).join(' · ');
+      messages.push([
+        `⛈️ <b>Tormenta fuerte hacia ${esc(me.name)}</b>`,
+        `${n.emoji} <b>${n.txt}</b>${cuando}`,
+        ...(x.fuente === 'smn' ? [`🚨 Aviso a corto plazo del SMN: ${esc(x.evento || 'tormentas')}${x.hasta ? ` · hasta las ${hhmm(x.hasta)}` : ''}`] : []),
+        ...(c ? [`🛰️ ${esc(c.fuerza)} (tope ${c.tope_min_C} °C) · ${esc(c.tendencia)} · ${x.d ? `a ${x.d} km al ${x.desde}` : 'encima'}${c.kmh && x.eta ? ` · viene a ~${c.kmh} km/h` : ''}`] : []),
+        `🧊 Granizo: <b>${x.granizo.nivel}</b>${x.granizo.señales.length ? ` · ${esc(x.granizo.señales.slice(0, 4).join('; '))}` : ''}`,
+        ...(x.porque.length ? [`✅ Por qué: ${x.porque.join('; ')}`] : []),
+        ...(x.dudas.length ? [`❓ No es seguro porque: ${x.dudas.join('; ')}`] : []),
+        ...(acTxt ? [`📊 Estas alertas llegaron: ${acTxt}`] : []),
+        `<i>El satélite no ve el granizo, da señales: solo un aviso del SMN o alguien que lo vea lo confirma.</i>`,
+        `<a href="${PANEL}">📡 Mapa y satélite</a>`,
+      ].join('\n'));
+      state.storm = { activa: true, last: NOW, llega: R[x.llega], gran: G[x.granizo.nivel] };
+      state.stormLog.push({ t: NOW, eta: x.eta, llega: x.llega, granizo: x.granizo.nivel, me: { lat: me.lat, lon: me.lon } });
+    }
+  } else if (st.activa && !xs.length && NOW - (st.last ?? 0) > 20 * 60e3) {
+    // La que avisamos ya pasó, se desvió o se deshizo: decirlo una vez (si fue hace poco).
+    if (NOW - st.last < 3 * 3600e3 && !state.chase.on) messages.push(`✅ <b>Ya no veo tormentas fuertes yendo hacia ${esc(me.name)}</b> (pasó, se desvió o se debilitó).`);
+    state.storm = { activa: false };
+  }
 }
 
 /* ---------- Envío ---------- */
