@@ -373,3 +373,17 @@ footer p { margin: 4px 0; }
 .agree { font-weight: 700; }
 .agree.alto { color: var(--ok); } .agree.medio { color: var(--warn); } .agree.bajo { color: var(--orange); }
 .otmark.salto span { font-size: 1.15rem; filter: drop-shadow(0 0 3px #ffd43b) drop-shadow(0 0 2px #000); }
+
+/* Avisos SMN: dónde, cuándo y si te afecta */
+.al summary { display: grid; gap: 3px; }
+.al summary::after { position: absolute; right: 12px; top: 12px; }
+.al { position: relative; padding-right: 30px; }
+.alrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.alrow b { display: inline; }
+.al .dist { font-size: .78rem; color: var(--mut); }
+.al .you { font-size: .78rem; font-weight: 700; color: var(--c); }
+.al.far { opacity: .7; }
+.al .mean { color: var(--tx); }
+.al .instr { white-space: pre-line; }
+.al .almap { margin-top: 8px; }
+.al p b { display: inline; }

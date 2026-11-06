@@ -745,22 +745,44 @@ function renderSmn() {
       <a href="https://www.smn.gob.ar/alertas" target="_blank" rel="noopener">smn.gob.ar/alertas</a>.</p>`;
     return;
   }
-  // El SMN emite un aviso por zona: los agrupamos por tipo + nivel.
+  // El SMN emite un aviso por zona y no manda el nombre de la zona, solo su dibujo: los agrupamos por tipo + nivel
+  // y decimos qué pueblos quedan adentro, cuándo rige y a qué distancia está de vos.
   const groups = new Map();
+  const o = S.origin;
+  const t0 = (a) => Date.parse(a.onset || a.effective || a.sent) || null;
   for (const a of d.alerts) {
     const [c, lbl, rank] = a.shortTerm ? ['#ff3b5c', 'Aviso a corto plazo', -1] : alertColor(a);
-    const mine = a.areas.some((ar) => ar.polygons.some((p) => inPoly([S.origin.lat, S.origin.lon], p)));
+    const polys = a.areas.flatMap((ar) => ar.polygons);
+    const mine = polys.some((p) => inPoly([o.lat, o.lon], p));
     for (const ar of a.areas) for (const p of ar.polygons)
       L.polygon(p, { pane: 'smn', color: c, weight: a.shortTerm ? 3 : 1.5, fillColor: c, fillOpacity: a.shortTerm ? 0.25 : 0.12, dashArray: a.shortTerm ? null : '4 4' })
-        .bindTooltip(`<b>${esc(a.event || a.headline)}</b><br>${esc(ar.desc)}<br>${esc(lbl)} · hasta ${a.expires ? fmt(a.expires) : '–'}`).addTo(smnLayer);
+        .bindTooltip(`<b>${esc(a.event || a.headline)}</b> · ${esc(lbl)}<br>${a.expires ? `hasta ${fmt(a.expires)}` : ''}`).addTo(smnLayer);
     const key = `${lbl}|${a.event || a.headline}`;
-    const g = groups.get(key) || { c, lbl, rank, event: a.event || a.headline, zones: [], mine: false, expires: 0, desc: a.description, instruction: a.instruction };
-    g.zones.push(...a.areas.map((x) => x.desc).filter(Boolean));
+    const g = groups.get(key) || { c, lbl, rank, event: a.event || a.headline, polys: [], zonas: 0, names: new Set(), mine: false, desde: null, expires: 0, desc: a.description, instruction: a.instruction };
+    g.polys.push(...polys);
+    g.zonas += Math.max(1, a.areas.length);
+    for (const ar of a.areas) if (ar.desc) g.names.add(ar.desc);
     g.mine ||= mine;
+    const t = t0(a);
+    if (t && (!g.desde || t < g.desde)) g.desde = t;
     g.expires = Math.max(g.expires, Date.parse(a.expires) || 0);
     groups.set(key, g);
   }
-  const gs = [...groups.values()].sort((x, y) => x.rank - y.rank || y.mine - x.mine || y.zones.length - x.zones.length);
+  // Pueblos del panel dentro de las zonas (o el más cercano) y distancia desde tu punto de salida.
+  for (const g of groups.values()) {
+    const pts = g.polys.flat();
+    g.dist = g.mine ? 0 : pts.length ? Math.round(Math.min(...pts.map(([lat, lon]) => km(o, { lat, lon })))) : null;
+    const inside = POINTS.filter((t) => g.polys.some((p) => inPoly([t.lat, t.lon], p))).map((t) => t.name);
+    if (inside.length) g.donde = inside;
+    else if (pts.length) {
+      const c = { lat: pts.reduce((s, p) => s + p[0], 0) / pts.length, lon: pts.reduce((s, p) => s + p[1], 0) / pts.length };
+      const t = POINTS.reduce((a, b) => (km(c, b) < km(c, a) ? b : a));
+      g.donde = [`zona a ${Math.round(km(c, t))} km al ${rumbo(bearingTo(t, c))} de ${t.name}`];
+    } else g.donde = [...g.names];
+    const b = L.latLngBounds(pts);
+    g.bounds = pts.length ? b : null;
+  }
+  const gs = [...groups.values()].sort((x, y) => x.rank - y.rank || y.mine - x.mine || (x.dist ?? 1e9) - (y.dist ?? 1e9));
   const upd = `actualizado ${fmt(d.fetched, { hour: '2-digit', minute: '2-digit' })}`;
   if (!gs.length) {
     el.className = 'card smn none';
@@ -768,16 +790,35 @@ function renderSmn() {
     return;
   }
   const short = gs.some((g) => g.rank < 0);
+  const MEANS = {
+    'Aviso a corto plazo': 'Tormenta severa <b>ya en curso</b> o por empezar en la próxima hora: es lo más cercano a un aviso de tornado.',
+    Rojo: 'Fenómenos excepcionales: peligro muy alto.', Naranja: 'Fenómenos peligrosos probables: tomar precauciones.',
+    Amarillo: 'Pueden darse fenómenos fuertes: estar atento.', Verde: 'Sin fenómenos peligrosos.',
+  };
+  const lejos = (g) => g.dist == null ? '' : g.mine ? '<span class="you">📍 incluye tu ubicación</span>' : `<span class="dist">a ${g.dist} km de vos</span>`;
+  const cuando = (g) => {
+    const f = (ms) => fmt(new Date(ms).toISOString(), { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    return g.desde && g.expires ? `${g.desde > Date.now() ? `desde ${f(g.desde)} ` : 'ahora · '}hasta ${f(g.expires)}` : g.expires ? `hasta ${f(g.expires)}` : '';
+  };
+  const dondeTxt = (g) => esc(g.donde.slice(0, 5).join(', ')) + (g.donde.length > 5 ? ` y ${g.donde.length - 5} más` : '');
   el.className = 'card smn' + (short ? ' hot' : '');
-  const zonesTxt = (z) => { const u = [...new Set(z)]; return esc(u.slice(0, 6).join(' · ')) + (u.length > 6 ? ` <b>+${u.length - 6} zonas</b>` : ''); };
-  el.innerHTML = `<div class="smnhead"><h2>${short ? '🚨' : '⚠️'} Avisos oficiales SMN</h2><span class="muted">${d.alerts.length} zonas · ${upd}</span></div>` +
-    gs.map((g) => `
-      <details class="al ${g.mine ? 'mine' : ''}" style="--c:${g.c}" ${g.rank < 0 ? 'open' : ''}>
-        <summary><span class="tag">${esc(g.lbl)}</span><b>${esc(g.event)}</b> ${new Set(g.zones).size ? `<span class="cnt">${new Set(g.zones).size === 1 ? '1 zona' : new Set(g.zones).size + ' zonas'}</span>` : ''}${g.mine ? ' · <u>incluye tu zona</u>' : ''}</summary>
-        <small>${zonesTxt(g.zones)}</small>
-        ${g.expires ? `<small>Hasta ${fmt(new Date(g.expires).toISOString())}</small>` : ''}
-        ${g.desc ? `<p>${esc(g.desc)}</p>` : ''}${g.instruction ? `<p>${esc(g.instruction)}</p>` : ''}
+  el.innerHTML = `<div class="smnhead"><h2>${short ? '🚨' : '⚠️'} Avisos oficiales SMN</h2><span class="muted">${gs.length} ${gs.length === 1 ? 'aviso' : 'avisos'} · ${upd}</span></div>` +
+    gs.map((g, k) => `
+      <details class="al ${g.mine ? 'mine' : ''} ${g.dist > 300 ? 'far' : ''}" style="--c:${g.c}" ${g.rank < 0 || g.mine ? 'open' : ''}>
+        <summary>
+          <div class="alrow"><span class="tag">${esc(g.lbl)}</span><b>${esc(g.event)}</b>${lejos(g)}</div>
+          <small>📍 ${dondeTxt(g)}${g.zonas > 1 ? ` · ${g.zonas} zonas` : ''}</small>
+          ${cuando(g) ? `<small>🕒 ${cuando(g)}</small>` : ''}
+        </summary>
+        <p class="mean">${MEANS[g.lbl] ?? ''}</p>
+        ${g.desc ? `<p>${esc(g.desc)}</p>` : ''}${g.instruction ? `<p class="instr">${esc(g.instruction)}</p>` : ''}
+        ${g.bounds ? `<button class="chip almap" data-k="${k}">Ver en el mapa</button>` : ''}
       </details>`).join('');
+  $$('.almap', el).forEach((b) => (b.onclick = () => {
+    const g = gs[+b.dataset.k];
+    showTab('map'); $('.mapcard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    map.fitBounds(g.bounds, { padding: [30, 30], maxZoom: 9 });
+  }));
 }
 
 /* ---------------- Estado / carga ---------------- */
