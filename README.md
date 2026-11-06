@@ -39,6 +39,13 @@ Todo corre gratis en **GitHub Actions** (workflow `Publicar panel`, cada ~10–2
 
 **Límites:** no hay radar de velocidad (el SMN no lo publica): el gancho y el giro no se ven; el satélite muestra topes fríos y topes que sobresalen (señales de supercelda), no tornados. Las posiciones estimadas y los movimientos son aproximados.
 
+## Red de tormentas (Supabase)
+Sección **🎥 Red** y capa **🎥 Publicaciones** del mapa. Cualquiera ve lo publicado; para publicar se entra con Google.
+- **Publicar**: ubicación exacta (GPS o punto en el mapa, se muestra en el mapa público), hora en que lo viste (últimos 7 días), qué viste, link de video (YouTube se ve adentro; Instagram, TikTok, Facebook y X se abren aparte), foto opcional (se achica en el celular a 1600 px) y descripción.
+- **Pronóstico**: cada publicación muestra a qué zona de caza de ese día pertenece (con el historial). En cada corrida, `scripts/historial.mjs` también guarda las publicaciones en su día: las de rotación, embudo o tornado cerca de la zona cuentan como acierto.
+- **Moderación**: cada uno borra lo suyo; 3 denuncias ocultan una publicación; el admin (tabla `admins`) ve, oculta, muestra y borra todo. Límite de 20 publicaciones por día por persona.
+- **Base**: proyecto `yqppzogcaoxhsmgtghqi`. Tablas `publicaciones`, `denuncias`, `admins`, bucket `fotos` (5 MB, imágenes). Todo con RLS; el autor, la fecha de creación, el día de tormenta y las denuncias los completa la base (no se pueden falsear desde la web). Conexión en `lib/red-config.mjs` (la clave publishable es pública por diseño).
+
 ## Historial y verificación
 Cada corrida guarda en `historial.json` (rama **`datos`** del repo; copia en `data/historial.json` del panel), por **día de tormenta** (de 6 h a 6 h, porque muchas tormentas siguen después de medianoche):
 - **Pronóstico**: el de la noche anterior (`pron_dia_antes`) y el de la mañana, hasta las 12 h (`pron_manana`): zona de caza, potencial, hora pico, centro.
