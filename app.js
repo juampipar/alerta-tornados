@@ -5,6 +5,7 @@ import { initRed, setRedLayer } from './lib/red.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from './lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from './lib/modelos.mjs';
 import { featureRow, predict } from './lib/entrenar.mjs';
+import { amenazas, valeAvisar, NIVEL } from './lib/tormenta.mjs';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -849,7 +850,7 @@ const NC_ANG = { norte: 0, noreste: 45, este: 90, sudeste: 135, sur: 180, sudoes
 let nowcast = null;
 async function loadNowcast() {
   try { nowcast = await getJson('data/nowcast.json'); } catch { nowcast = null; }
-  renderNowcast();
+  renderNowcast(); renderStorm();
 }
 function renderNowcast() {
   ncLayer.clearLayers();
@@ -884,9 +885,37 @@ function renderNowcast() {
   }
 }
 
+// ⛈️ Tormenta fuerte o granizo hacia tu punto de salida (la misma cuenta que la alerta de Telegram).
+function renderStorm() {
+  const el = $('#tormenta');
+  if (!el) return;
+  if (!nowcast && !S.smn?.ok) { el.hidden = true; return; }
+  const o = S.origin, quien = o.fallback || !o.label ? 'Leones' : o.label;
+  const xs = amenazas({ me: o, nc: nowcast, smn: S.smn, data: S.data });
+  const x = xs.find((t) => valeAvisar(t));
+  el.hidden = false;
+  const sat = nowcast?.hora ? `satélite de las ${esc(nowcast.hora)} h` : 'sin satélite reciente';
+  if (!x) {
+    el.className = 'card storm ok';
+    el.innerHTML = `<h2>⛈️ Hacia ${esc(quien)}: ✅ ninguna tormenta fuerte en las próximas 2 h</h2><p class="why">${sat} · avisos del SMN</p>`;
+    return;
+  }
+  const n = NIVEL[x.llega], c = x.core;
+  const cuando = x.eta == null ? 'en las próximas horas' : x.eta > 0 ? `en ~${x.eta} min (≈ ${fmt(new Date(Date.now() + x.eta * 60e3).toISOString(), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} h)` : '<b>ya está encima</b>';
+  el.className = 'card storm ' + x.llega;
+  el.innerHTML = `<h2>⛈️ Tormenta fuerte hacia ${esc(quien)}</h2>
+    <p>${n.emoji} <b>${n.txt}</b> · ${cuando}</p>
+    ${x.fuente === 'smn' ? `<p>🚨 Aviso a corto plazo del SMN: ${esc(x.evento || 'tormentas')}</p>` : ''}
+    ${c ? `<p>🛰️ ${esc(c.fuerza)} (tope ${c.tope_min_C} °C) · ${esc(c.tendencia)} · ${x.d ? `a ${x.d} km al ${x.desde}` : 'encima'}${c.kmh && x.eta ? ` · viene a ~${c.kmh} km/h` : ''}</p>` : ''}
+    <p>🧊 Granizo: <b>${x.granizo.nivel}</b>${x.granizo.señales.length ? ` <span class="why">· ${esc(x.granizo.señales.slice(0, 4).join('; '))}</span>` : ''}</p>
+    ${x.porque.length ? `<p class="why">✅ Por qué: ${x.porque.join('; ')}</p>` : ''}
+    ${x.dudas.length ? `<p class="why">❓ No es seguro porque: ${x.dudas.join('; ')}</p>` : ''}
+    <p class="why">${sat}. El satélite no ve el granizo, da señales: lo confirma un aviso del SMN o alguien que lo vea.</p>`;
+}
+
 async function loadSmn() {
   try { S.smn = await getJson('data/smn.json'); } catch { S.smn = { ok: false, error: 'sin archivo de avisos' }; }
-  renderSmn(); renderStatus();
+  renderSmn(); renderStatus(); renderStorm();
 }
 
 /* ---------------- Controles ---------------- */
@@ -921,7 +950,7 @@ function setOrigin(o, mode) {
   $$('#origin [data-o]').forEach((x) => x.classList.toggle('on', x.dataset.o === mode));
   $('#originSel').value = mode === 'town' ? o.label : '';
   $('#originSel').classList.toggle('on', mode === 'town');
-  drawOrigin(); render(); if (S.smn) renderSmn(); renderOriginAsk();
+  drawOrigin(); render(); if (S.smn) renderSmn(); renderOriginAsk(); renderStorm();
 }
 function startGps(btn = $('#origin [data-o="gps"]'), quiet = false) {
   if (!navigator.geolocation) { if (!quiet) alert('Tu navegador no da la ubicación. Elegí un pueblo o tocá el mapa.'); return; }
@@ -1075,6 +1104,6 @@ function setWindy(o = windyO) {
 $$('#windysw button').forEach((b) => (b.onclick = () => setWindy(b.dataset.o)));
 setInterval(loadRadar, 5 * 60e3);
 setInterval(() => { loadSmn(); loadNowcast(); }, 10 * 60e3);
-setInterval(renderNowcast, 60e3); // la posición estimada avanza minuto a minuto
+setInterval(() => { renderNowcast(); renderStorm(); }, 60e3); // la posición estimada avanza minuto a minuto
 loadNowcast();
 setInterval(() => { loadForecast(); loadWrf(); }, 60 * 60e3);

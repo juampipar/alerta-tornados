@@ -99,10 +99,15 @@ Indica dónde hay ingredientes; **no predice tornados**.
 La guía de uso está en el panel, botón **❓ Cómo usar**.
 
 ## Alertas por Telegram
-Cada hora, el mismo workflow revisa los datos. Manda dos tipos de mensaje:
+Cada 10 minutos, el mismo workflow revisa los datos. Manda estos mensajes:
 
 - 🌪️ **Día de caza**: hoy o mañana alguna zona llega a **60** o más. Trae la mejor zona, la hora pico, a qué hora salir desde Leones, hacia dónde van las tormentas, los ingredientes explicados (energía, cizalladura, giro cerca del suelo, base de nube), otras zonas y la ruta en Google Maps. Uno por día, y otro si sube 10 puntos. Entre las 23 y las 7 h no se manda.
 - 🚨 **¡Ya se están formando!**: solo en un día de caza, cuando el SMN emite un aviso a corto plazo cerca de Leones (200 km) o de las zonas marcadas (80 km). Es la confirmación de que lo que marcaba el pronóstico está pasando. Los avisos del SMN de días comunes **no** se mandan (son muchos y casi nunca son de tornado).
+- ⛈️ **Tormenta fuerte hacia Leones** (todos los días, no solo de caza; cada 10 min): una tormenta fuerte viene hacia Leones en las próximas 2 h, o un aviso a corto plazo del SMN cubre Leones. Lógica en `lib/tormenta.mjs`, la misma que la tarjeta ⛈️ del panel (que usa tu ubicación).
+  - **Qué tan seguro es que llegue**: 🔴 muy probable / 🟠 probable / 🟡 posible, pero no es seguro. Suma si viene derecho (con ±20° de error de dirección), si falta poco, si el satélite confirma el movimiento y si crece; resta si pasa de costado, si falta más de 1 h o si se debilita. Un aviso del SMN solo (sin tormenta en el satélite) es 🟠, porque cubre una zona grande.
+  - **Granizo**: probable / posible / poco probable, con las señales: topes que sobresalen, salto de rayos (GLM), topes muy fríos, si crece, la energía y la cizalla pronosticadas y si el aviso del SMN nombra granizo. El satélite no ve el granizo: son señales, y el mensaje lo dice.
+  - Para no dar falsas alarmas: 🔴 y 🟠 se mandan siempre; 🟡 solo de día, si el granizo es al menos posible y llega en menos de 90 min. No repite (de nuevo solo si sube el nivel o pasaron 45 min) y avisa una vez cuando "ya no viene". Con el modo caza prendido no se manda (ese ya avisa con tu ubicación).
+  - **Cuenta cuántas acertó**: cada alerta se revisa sola (¿pasó una tormenta fuerte a menos de 25 km o hubo aviso del SMN en la ventana prevista?) y el mensaje muestra "📊 Estas alertas llegaron: 🔴 3 de 4 · 🟠 2 de 5…".
 
 **Configuración (una sola vez):**
 1. En Telegram, hablale a **@BotFather** → `/newbot` → elegí nombre. Te da un **token**.
