@@ -28,6 +28,7 @@ jobs:
       - run: node scripts/build-data.mjs _site
         env:
           REUSE_FORECAST: ${{ github.event_name == 'schedule' && 'https://juampipar.github.io/alerta-tornados/data/forecast.json' || '' }}
+          REUSE_MODELS: ${{ github.event_name == 'schedule' && 'https://juampipar.github.io/alerta-tornados/data/modelos.json' || '' }}
       # Lluvia pronosticada del modelo WRF del SMN (4 km). Solo se recalcula cuando sale una corrida nueva.
       - uses: actions/setup-python@v5
         with: { python-version: '3.12', cache: pip, cache-dependency-path: scripts/requirements.txt }

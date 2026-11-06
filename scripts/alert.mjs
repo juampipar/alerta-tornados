@@ -12,6 +12,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, nearestStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
+import { zoneAgreement, widenWindow } from '../lib/modelos.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -44,6 +45,7 @@ const dayName = (d) => `${new Date(d + 'T12:00:00Z').toLocaleDateString('es-AR',
 
 const data = await readJson(`${dir}/forecast.json`);
 const smn = await readJson(`${dir}/smn.json`);
+const MOD = await readJson(`${dir}/modelos.json`); // índice con GFS, ICON y ECMWF por separado
 const state = (await readJson(STATE)) || {};
 // Corrección aprendida (zona y hora) del historial publicado. Sin ella, se usa el modelo tal cual.
 const BIAS = await (async () => {
@@ -85,11 +87,20 @@ function zonesFor(date, max = 2) {
   // Igual que el panel: ventana de horas y corrección aprendida. ctr_modelo queda para el historial,
   // que mide el error contra el modelo sin corregir (si no, la corrección se mediría contra sí misma).
   const hourOf = (j) => { const t = data.times[j]; return +t.slice(11, 13) + (t.startsWith(date) ? 0 : 24); };
-  return huntZones(cells, data.towns, max).map((z) => ({
-    ...shiftZone(z, BIAS), ctr_modelo: z.ctr,
-    ventana: correctedWindow(zoneWindow(z, data.grid.pts, data.grid.score, idx, hourOf), BIAS),
-    dt: BIAS?.aplicado ? BIAS.horas : 0,
-  }));
+  return huntZones(cells, data.towns, max).map((z) => {
+    const dt = BIAS?.aplicado ? BIAS.horas : 0, acuerdo = zoneAgreement(MOD, z.ctr, z.r, date);
+    return {
+      ...shiftZone(z, BIAS), ctr_modelo: z.ctr, dt, acuerdo,
+      ventana: widenWindow(correctedWindow(zoneWindow(z, data.grid.pts, data.grid.score, idx, hourOf), BIAS), acuerdo, dt),
+    };
+  });
+}
+function modelsLine(z) {
+  const a = z.acuerdo;
+  if (!a) return null;
+  const per = a.por_modelo.map((m) => `${m.modelo} ${m.v}${m.v >= 45 ? ` (${clock((m.hora + (z.dt ?? 0)) * 60)})` : ''}`).join(' · ');
+  const txt = { alto: '✅ coinciden todos', medio: '🟡 coinciden algunos', bajo: '⚠️ solo uno la ve' }[a.acuerdo];
+  return `🧮 Modelos: ${per} → ${txt} (${a.coinciden} de ${a.total})`;
 }
 const ventana = (z) => (z.ventana ? `${clock(z.ventana[0] * 60)}–${clock(z.ventana[1] * 60)}` : null);
 function biasLine() {
@@ -178,6 +189,7 @@ async function huntMessage(date, label, rank, prev) {
     `Potencial de tornado <b>${lv.label.toUpperCase()} · ${score}/100</b>${prev >= 0 ? ` <i>(subió de ${prev})</i>` : ''}`,
     '',
     `🎯 <b>Zona ${esc(o.z.name)}</b> · pico a las <b>${clock(o.peakH * 60)} h</b>${ventana(o.z) ? ` · ventana ${ventana(o.z)}` : ''}`,
+    modelsLine(o.z),
     biasLine(),
     `👁 Parar en: ${stopLine(o)}`,
     o.stop?.kind === 'pueblo' ? `   (no encontré estación de servicio cerca del punto ideal: es el pueblo más cercano) · <a href="${ruta(o.vp)}">Ruta</a>`
@@ -274,6 +286,7 @@ async function buildBrief() {
       opciones: opts.map((o, k) => ({
         n: k + 1, zona: o.z.name, potencial: o.z.v, radio_km: r0(o.z.r), centro: { lat: +o.z.ctr.lat.toFixed(2), lon: +o.z.ctr.lon.toFixed(2) },
         hora_pico: clock(o.peakH * 60), ventana_horas: ventana(o.z),
+        modelos: o.z.acuerdo ? { coinciden: o.z.acuerdo.coinciden, de: o.z.acuerdo.total, acuerdo: o.z.acuerdo.acuerdo, por_modelo: o.z.acuerdo.por_modelo.map((m) => ({ modelo: m.modelo, potencial: m.v, hora_pico: clock((m.hora + (o.z.dt ?? 0)) * 60) })) } : null,
         // Sin la corrección aprendida: el historial mide el error contra esto.
         hora_pico_modelo: clock((o.peakH - (o.z.dt ?? 0)) * 60), centro_modelo: { lat: +o.z.ctr_modelo.lat.toFixed(2), lon: +o.z.ctr_modelo.lon.toFixed(2) },
         parada: { nombre: o.stop?.label ?? null, tipo: o.stop?.kind ?? null, cerca_de: o.place?.place ?? null, ruta: o.place?.road ?? null, lat: +o.vp.lat.toFixed(3), lon: +o.vp.lon.toFixed(3) },
