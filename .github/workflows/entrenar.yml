@@ -20,7 +20,7 @@ concurrency: { group: entrenar, cancel-in-progress: false }
 jobs:
   entrenar:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,3 +46,4 @@ jobs:
           exit 1
         env:
           RECREAR: ${{ inputs.recrear && '1' || '' }}
+          TIEMPO_MAX_MIN: 165 # a ~45 s por pedido rinde ~1800 casos por noche, dentro de la cuota diaria
