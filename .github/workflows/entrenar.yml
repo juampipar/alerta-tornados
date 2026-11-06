@@ -20,7 +20,7 @@ concurrency: { group: entrenar, cancel-in-progress: false }
 jobs:
   entrenar:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,9 +32,11 @@ jobs:
           node scripts/entrenar/ambientes.mjs .datos "${{ inputs.maximo || '2000' }}"
           node scripts/entrenar/entrenar.mjs .datos
           cd .datos
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add entrenamiento
           git diff --cached --quiet && exit 0
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -qm "Entrenamiento $(date -u +%FT%H:%MZ)"
+          git commit -qm "Entrenamiento $(date -u +%FT%H:%MZ)"
           # El panel también escribe en la rama datos (cada 10 min): si se adelantó, rebasar y reintentar.
           for i in 1 2 3 4 5; do
             git push -q origin datos && exit 0
