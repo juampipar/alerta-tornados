@@ -68,6 +68,7 @@ jobs:
         run: |
           if git fetch -q --depth=1 origin datos; then git worktree add -q -B datos .datos FETCH_HEAD; else git worktree add -q --orphan -b datos .datos; fi
           node scripts/historial.mjs _site .datos
+          cp .datos/entrenamiento/modelo.json _site/data/modelo-tornado.json 2>/dev/null || true # modelo entrenado (si ya hay)
           cd .datos
           git add historial.json
           if ! git diff --cached --quiet; then
