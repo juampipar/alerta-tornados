@@ -20,11 +20,13 @@ async function published(url, maxMin = 115) {
 }
 
 const reused = process.env.REUSE_FORECAST ? await published(process.env.REUSE_FORECAST) : null;
+let bajado = false; // si el pronóstico principal se bajó en esta corrida, los modelos esperan un minuto (límite de Open-Meteo)
 if (reused) {
   await writeFile(`${dir}/forecast.json`, JSON.stringify(reused));
   console.log(`forecast.json: reusado (generado ${reused.generated})`);
 } else try {
   const d = await buildDataset();
+  bajado = true;
   await writeFile(`${dir}/forecast.json`, JSON.stringify(d));
   console.log(`forecast.json: ${d.towns.length} localidades, ${d.grid.pts.length} celdas`);
 } catch (e) {
@@ -37,7 +39,7 @@ if (reusedM) {
   await writeFile(`${dir}/modelos.json`, JSON.stringify(reusedM));
   console.log(`modelos.json: reusado (generado ${reusedM.generated})`);
 } else try {
-  const m = await buildModels();
+  const m = await buildModels(fetch, { esperarAntes: bajado });
   await writeFile(`${dir}/modelos.json`, JSON.stringify(m));
   console.log(`modelos.json: ${m.pts.length} puntos · ${m.modelos.map((n) => `${n} ${m.ok[n] ? 'ok' : 'SIN DATOS'}`).join(' · ')}`);
 } catch (e) {
