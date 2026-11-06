@@ -360,3 +360,13 @@ footer p { margin: 4px 0; }
 .pact { display: flex; flex-wrap: wrap; gap: 6px; }
 .pubpin { font-size: 18px; line-height: 28px; text-align: center; background: rgba(10, 15, 28, .85); border: 2px solid #5fb4ff; border-radius: 50%; }
 .pubpin.fuerte { border-color: #ff3b5c; box-shadow: 0 0 0 3px rgba(255, 59, 92, .35); }
+.pubpin.viejo { opacity: .45; border-color: var(--mut); box-shadow: none; }
+.pubpin.nuevo { animation: pubpulse 1.6s ease-out infinite; }
+@keyframes pubpulse { 0% { box-shadow: 0 0 0 0 rgba(95, 180, 255, .7); } 100% { box-shadow: 0 0 0 16px rgba(95, 180, 255, 0); } }
+.pubpin.fuerte.nuevo { animation-name: pubpulsered; }
+@keyframes pubpulsered { 0% { box-shadow: 0 0 0 0 rgba(255, 59, 92, .8); } 100% { box-shadow: 0 0 0 18px rgba(255, 59, 92, 0); } }
+@media (prefers-reduced-motion: reduce) { .pubpin.nuevo { animation: none; box-shadow: 0 0 0 4px rgba(95, 180, 255, .5); } }
+.history .go { display: inline-flex; align-items: center; gap: 6px; background: var(--ac); color: #04121f; padding: 8px 14px; border-radius: 9px; font-weight: 700; text-decoration: none; font-size: .85rem; }
+.hpubs { margin: 8px 0 0; padding-left: 18px; font-size: .84rem; color: #c9d3e8; display: grid; gap: 4px; }
+.hpubs li.hot { color: #ff7a90; }
+.hpubs a { color: var(--ac); }

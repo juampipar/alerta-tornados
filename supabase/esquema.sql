@@ -118,3 +118,11 @@ create policy "borrar fotos propias o admin" on storage.objects for delete to au
   using (bucket_id = 'fotos' and ((storage.foldername(name))[1] = auth.uid()::text or privado.es_admin()));
 
 insert into public.admins (email) values ('juampipar@gmail.com');
+
+-- Migración solo_links_de_video: el link de video es obligatorio y no se suben fotos.
+alter table public.publicaciones alter column video_url set not null;
+alter table public.publicaciones add constraint publicaciones_sin_fotos check (foto_path is null);
+drop policy if exists "subir fotos propias" on storage.objects;
+update storage.buckets set public = false where id = 'fotos';
+-- (Esa migración también agregó una columna "indice" que no se usa: el índice en el lugar lo guarda el historial.
+--  Se puede borrar con: alter table public.publicaciones drop column if exists indice;)

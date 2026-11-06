@@ -41,19 +41,19 @@ Todo corre gratis en **GitHub Actions** (workflow `Publicar panel`, cada ~10–2
 
 ## Red de tormentas (Supabase)
 Sección **🎥 Red** y capa **🎥 Publicaciones** del mapa. Cualquiera ve lo publicado; para publicar se entra con Google.
-- **Publicar**: ubicación exacta (GPS o punto en el mapa, se muestra en el mapa público), hora en que lo viste (últimos 7 días), qué viste, link de video (YouTube se ve adentro; Instagram, TikTok, Facebook y X se abren aparte), foto opcional (se achica en el celular a 1600 px) y descripción.
-- **Pronóstico**: cada publicación muestra a qué zona de caza de ese día pertenece (con el historial). En cada corrida, `scripts/historial.mjs` también guarda las publicaciones en su día: las de rotación, embudo o tornado cerca de la zona cuentan como acierto.
+- **Publicar**: un **link de video** (obligatorio: YouTube se ve adentro; Instagram, TikTok, Facebook y X se abren aparte), ubicación exacta (GPS o punto en el mapa, se muestra en el mapa público), hora en que lo viste (últimos 7 días), qué viste y descripción. No se suben fotos.
+- **Actividad en el mapa**: 🎥 que late = última hora; normal = últimas 24 h; apagado = días anteriores. En rojo si se vio rotación, embudo o tornado.
+- **Pronóstico**: cada video muestra a qué zona de caza de ese día pertenece y el valor del índice en ese lugar y esa hora.
 - **Moderación**: cada uno borra lo suyo; 3 denuncias ocultan una publicación; el admin (tabla `admins`) ve, oculta, muestra y borra todo. Límite de 20 publicaciones por día por persona.
-- **Base**: proyecto `yqppzogcaoxhsmgtghqi`. Tablas `publicaciones`, `denuncias`, `admins`, bucket `fotos` (5 MB, imágenes). Todo con RLS; el autor, la fecha de creación, el día de tormenta y las denuncias los completa la base (no se pueden falsear desde la web). Conexión en `lib/red-config.mjs` (la clave publishable es pública por diseño).
+- **Base**: proyecto `yqppzogcaoxhsmgtghqi`. Tablas `publicaciones`, `denuncias`, `admins`. Todo con RLS; el autor, la fecha de creación, el día de tormenta y las denuncias los completa la base (no se pueden falsear desde la web). Esquema en `supabase/esquema.sql`; conexión en `lib/red-config.mjs` (la clave publishable es pública por diseño).
 
-## Historial y verificación
-Cada corrida guarda en `historial.json` (rama **`datos`** del repo; copia en `data/historial.json` del panel), por **día de tormenta** (de 6 h a 6 h, porque muchas tormentas siguen después de medianoche):
-- **Pronóstico**: el de la noche anterior (`pron_dia_antes`) y el de la mañana, hasta las 12 h (`pron_manana`): zona de caza, potencial, hora pico, centro.
-- **Avisos del SMN**: todos los del día, sin repetir, con su centro aproximado (los de corto plazo marcados).
-- **Satélite**: las señales fuertes de `nowcast.json` (topes < −63 °C o topes que sobresalen), hasta 60 por día.
-- **Tus reportes**: el formulario "¿Qué viste?" del panel abre un issue de GitHub ya armado (título "Reporte de caza …"). Solo se leen los issues del dueño del repo. Si editás el issue, el historial se actualiza.
+## Historial y entrenamiento del índice
+Se arma solo en cada corrida (`scripts/historial.mjs`) y se guarda en `historial.json` (rama **`datos`**; copia en `data/historial.json`), por **día de tormenta** (de 6 h a 6 h):
+- **Videos de la red**: cada uno con su hora, lugar, qué se vio y el **índice en ese lugar y hora** (punto de la grilla más cercano, hora redonda más cercana, más los ingredientes del pueblo más cercano). Se calcula la primera vez que se ve la publicación y se conserva: es el dato para entrenar el índice.
+- **Pronóstico**: el de la noche anterior y el de la mañana (zona de caza, potencial, hora pico, centro).
+- **Avisos del SMN** (los de corto plazo marcados) y **satélite** (topes < −63 °C o topes que sobresalen).
 
-El panel muestra la sección **📒 Historial** con cada día: qué marcó el panel, avisos a corto plazo y señales del satélite a menos de 150 km de la zona, tu reporte y un link al satélite de esa tarde (NASA Worldview). Con una temporada de datos se pueden ajustar los umbrales del índice.
+La sección **📒 Historial** muestra cuántos avistajes de rotación, embudo o tornado hubo, el índice promedio donde se vieron y cuántos cayeron con índice 60+, 45–59 o menos de 45; y por día, lo pronosticado contra lo que pasó.
 
 ## Cómo se actualiza
 El workflow `Publicar panel` corre **cada 10 minutos** (y en cada push a `main`). El pronóstico se recalcula cada 2 horas (cuota gratuita de Open-Meteo); en las otras corridas solo se renuevan los avisos del SMN (los de muy corto plazo duran 1–2 h): `scripts/build-data.mjs` baja el pronóstico de Open-Meteo y los avisos del SMN, genera `data/forecast.json` y `data/smn.json`, y publica en GitHub Pages. Si el archivo de pronóstico falta o es viejo, el panel lo pide directo a Open-Meteo.
