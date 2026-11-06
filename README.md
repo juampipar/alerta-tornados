@@ -55,6 +55,13 @@ Se arma solo en cada corrida (`scripts/historial.mjs`) y se guarda en `historial
 
 La sección **📒 Historial** muestra cuántos avistajes de rotación, embudo o tornado hubo, el índice promedio donde se vieron y cuántos cayeron con índice 60+, 45–59 o menos de 45; y por día, lo pronosticado contra lo que pasó.
 
+## Aprende de los errores (zona y hora)
+`lib/sesgo.mjs`. En cada corrida, el historial compara cada día pasado que tuvo zona de caza con dónde y cuándo aparecieron de verdad las tormentas fuertes a menos de 250 km: avisos a corto plazo del SMN, topes que sobresalen en el satélite y videos de la red (los de rotación, embudo o tornado pesan doble). De cada día saca cuántos km al este/norte y cuántas horas antes/después aparecieron.
+- Con **3 días o más** corrige el pronóstico con la **mediana** de esos errores (un día raro no la arrastra), achicada cuando hay pocos días (con 3 días pesa la mitad; con 30, casi todo) y con topes de 80 km y 3 h.
+- **Zona**: el centro se corre. **Hora**: el pico se corre. **Ventana de horas**: las horas seguidas alrededor del pico en que la zona está a menos de 10 puntos de su máximo, corrida por lo aprendido y ensanchada según cuánto varía el error de un día a otro.
+- El panel dice cuánto corrigió ("Corregido con N días: las tormentas aparecieron X km al este y Y h más tarde") o cuántos días faltan para empezar.
+- La corrección está en `historial.json` (`sesgo`). Por ahora la usa el panel; las alertas de Telegram todavía no.
+
 ## Cómo se actualiza
 El workflow `Publicar panel` corre **cada 10 minutos** (y en cada push a `main`). El pronóstico se recalcula cada 2 horas (cuota gratuita de Open-Meteo); en las otras corridas solo se renuevan los avisos del SMN (los de muy corto plazo duran 1–2 h): `scripts/build-data.mjs` baja el pronóstico de Open-Meteo y los avisos del SMN, genera `data/forecast.json` y `data/smn.json`, y publica en GitHub Pages. Si el archivo de pronóstico falta o es viejo, el panel lo pide directo a Open-Meteo.
 
