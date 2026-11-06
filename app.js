@@ -1,4 +1,4 @@
-import { HOME, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, nearestStop, plainKey, bearingTo, coreAt } from './lib/risk.mjs';
+import { HOME, POINTS, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, nearestStop, plainKey, bearingTo, coreAt } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 import { loadHistory } from './lib/historial-ui.mjs';
 
@@ -13,7 +13,7 @@ const WINDOW = [11, 2]; // de 11 h a 2 h del día siguiente: en el Pasillo mucha
 
 const S = {
   data: null, smn: null, all: false, day: 0, hour: Math.min(22, Math.max(11, nowArt().hour)), max: true,
-  origin: { ...HOME, label: 'Leones' },
+  origin: { ...HOME, label: 'Leones', fallback: true }, // respaldo hasta que el usuario elija desde dónde sale
   layers: { zonas: true, smn: true, nucleos: true, lluvia: false, radar: false, sat: false, ir: false }, // RainViewer casi no cubre el centro de Argentina: apagado de entrada
 };
 
@@ -34,7 +34,7 @@ let originMarker = null;
 function drawOrigin() {
   originMarker?.remove();
   originMarker = L.circleMarker([S.origin.lat, S.origin.lon], { radius: 7, color: '#fff', weight: 3, fillColor: '#5fb4ff', fillOpacity: 1 })
-    .bindTooltip(S.origin.label === 'Leones' ? 'Leones (casa)' : 'Tu ubicación').addTo(map);
+    .bindTooltip(S.origin.fallback ? 'Leones (elegí desde dónde salís)' : `Salís desde ${esc(S.origin.label)}`).addTo(map);
 }
 drawOrigin();
 
@@ -823,28 +823,81 @@ $('#play').onclick = () => {
   $('#play').textContent = '❚❚';
   playT = setInterval(() => { S.hour = S.hour >= 23 ? 9 : S.hour + 1; render(); }, 900);
 };
-$$('#origin button').forEach((b) => (b.onclick = () => {
-  const set = (o) => { S.origin = o; $$('#origin button').forEach((x) => x.classList.toggle('on', x === b)); drawOrigin(); render(); renderSmn(); };
-  if (b.dataset.o === 'home') { stopGps(); return set({ ...HOME, label: 'Leones' }); }
-  if (!navigator.geolocation) return alert('Tu navegador no da la ubicación.');
-  b.textContent = '📍 Buscando…';
+/* ---------------- Desde dónde salís ---------------- */
+// Tu ubicación (GPS, se sigue mientras manejás), un pueblo de la lista o un punto tocado en el mapa.
+// Se recuerda en este dispositivo. Leones queda solo como respaldo hasta que elijas.
+const ORIGIN_KEY = 'origen';
+const saveOrigin = (o) => { try { localStorage.setItem(ORIGIN_KEY, JSON.stringify(o)); } catch { /* sin almacenamiento */ } };
+function renderOriginAsk() {
+  const el = $('#originask');
+  if (el) el.hidden = !S.origin.fallback;
+}
+function setOrigin(o, mode) {
+  S.origin = o;
+  $$('#origin [data-o]').forEach((x) => x.classList.toggle('on', x.dataset.o === mode));
+  $('#originSel').value = mode === 'town' ? o.label : '';
+  $('#originSel').classList.toggle('on', mode === 'town');
+  drawOrigin(); render(); if (S.smn) renderSmn(); renderOriginAsk();
+}
+function startGps(btn = $('#origin [data-o="gps"]'), quiet = false) {
+  if (!navigator.geolocation) { if (!quiet) alert('Tu navegador no da la ubicación. Elegí un pueblo o tocá el mapa.'); return; }
+  btn.textContent = '📍 Buscando…';
   stopGps();
   let first = true, last = null;
   gpsWatch = navigator.geolocation.watchPosition(
     (p) => {
       const o = { lat: p.coords.latitude, lon: p.coords.longitude, label: 'tu ubicación' };
-      if (first) { first = false; b.textContent = '📍 Mi ubicación'; last = o; set(o); map.setView([o.lat, o.lon], 9); return; }
+      if (first) { first = false; btn.textContent = '📍 Mi ubicación'; last = o; saveOrigin({ mode: 'gps' }); setOrigin(o, 'gps'); map.setView([o.lat, o.lon], 8); return; }
       // Mientras manejás: mover el punto y los círculos; recalcular distancias cada 2 km.
       S.origin = o; drawOrigin(); renderSafety();
       if (km(o, last) >= 2) { last = o; render(); }
     },
     (e) => {
       if (!first) return; // ya teníamos ubicación: seguimos esperando la próxima
-      b.textContent = '📍 Mi ubicación'; stopGps();
-      alert(e.code === 1 ? 'No diste permiso para usar la ubicación.' : 'No se pudo obtener la ubicación.');
+      btn.textContent = '📍 Mi ubicación'; stopGps();
+      if (!quiet) alert(e.code === 1 ? 'No diste permiso para usar la ubicación. Elegí un pueblo o tocá el mapa.' : 'No se pudo obtener la ubicación.');
+      renderOriginAsk();
     },
     { enableHighAccuracy: true, maximumAge: 30000 });
-}));
+}
+$('#originSel').innerHTML = '<option value="">🏘️ Elegir pueblo…</option>'
+  + [...POINTS].sort((a, b) => a.name.localeCompare(b.name, 'es')).map((p) => `<option>${esc(p.name)}</option>`).join('');
+$('#originSel').onchange = (e) => {
+  const p = POINTS.find((x) => x.name === e.target.value);
+  if (!p) return;
+  stopGps(); saveOrigin({ mode: 'town', name: p.name }); setOrigin({ lat: p.lat, lon: p.lon, label: p.name }, 'town');
+};
+$('#origin [data-o="gps"]').onclick = (e) => startGps(e.currentTarget);
+$('#origin [data-o="pick"]').onclick = (e) => {
+  const b = e.currentTarget;
+  showTab('map');
+  $('.mapcard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  b.textContent = '📌 Tocá el mapa…';
+  map.getContainer().style.cursor = 'crosshair';
+  map.once('click', (ev) => {
+    map.getContainer().style.cursor = '';
+    b.textContent = '📌 En el mapa';
+    const o = { lat: +ev.latlng.lat.toFixed(4), lon: +ev.latlng.lng.toFixed(4), label: 'el punto elegido' };
+    stopGps(); saveOrigin({ mode: 'pick', lat: o.lat, lon: o.lon }); setOrigin(o, 'pick');
+  });
+};
+$$('[data-origin-gps]').forEach((b) => (b.onclick = () => startGps()));
+$$('[data-origin-town]').forEach((b) => (b.onclick = () => { $('#originSel').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('#originSel').focus(); }));
+
+// Al entrar: lo último que elegiste; si nunca elegiste pero ya diste permiso de ubicación, usarla.
+(async function restoreOrigin() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(ORIGIN_KEY)); } catch { /* nada guardado */ }
+  if (saved?.mode === 'town') {
+    const p = POINTS.find((x) => x.name === saved.name);
+    if (p) return setOrigin({ lat: p.lat, lon: p.lon, label: p.name }, 'town');
+  }
+  if (saved?.mode === 'pick' && Number.isFinite(saved.lat)) return setOrigin({ lat: saved.lat, lon: saved.lon, label: 'el punto elegido' }, 'pick');
+  let granted = false;
+  try { granted = (await navigator.permissions?.query({ name: 'geolocation' }))?.state === 'granted'; } catch { /* sin Permissions API */ }
+  if (saved?.mode === 'gps' || granted) return startGps(undefined, true);
+  renderOriginAsk();
+})();
 
 
 /* ---------------- Lluvia pronosticada (modelo WRF del SMN, 4 km) ---------------- */
@@ -897,7 +950,7 @@ loadForecast(); loadSmn(); loadRadar(); loadWrf();
 loadHistory($('#historial'));
 
 // Pestaña Windy: radar ahora (incluye los radares del SMN), tormentas pronosticadas o CAPE,
-// centrado en tu zona de caza (opción 1) si hay una; si no, en Leones.
+// centrado en tu zona de caza (opción 1) si hay una; si no, en tu punto de salida.
 const WINDY_HINT = {
   radar: 'Lo que llueve <b>ahora</b> (última hora). Tocá ▶ abajo para ver hacia dónde se mueve. Para lo que viene, tocá “Tormentas próximas horas”.',
   rain: '<b>Pronóstico</b> de lluvia y tormentas (⚡ = tormenta). Mové la barra de abajo para ver las próximas horas: donde aparezcan manchas fuertes y ⚡ cerca de tu zona, ahí se esperan.',
@@ -906,7 +959,7 @@ const WINDY_HINT = {
 let windyO = 'radar';
 function windyCenter() {
   const z = S.opts?.[0]?.z?.ctr;
-  return z ? { lat: z.lat.toFixed(2), lon: z.lon.toFixed(2) } : { lat: '-32.66', lon: '-62.30' };
+  return z ? { lat: z.lat.toFixed(2), lon: z.lon.toFixed(2) } : { lat: S.origin.lat.toFixed(2), lon: S.origin.lon.toFixed(2) };
 }
 function setWindy(o = windyO) {
   windyO = o;

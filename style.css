@@ -311,3 +311,12 @@ footer p { margin: 4px 0; }
 .hgrid small { display: block; color: var(--mut); }
 .hgrid a, .history .linkbtn { color: var(--ac); }
 .linkbtn { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; }
+
+/* Desde dónde salís */
+.originbar { flex-wrap: wrap; }
+.originbar select { background: transparent; color: var(--mut); border: 0; border-radius: 8px; padding: 5px 6px; font: inherit; font-size: .78rem; font-weight: 600; max-width: 150px; cursor: pointer; }
+.originbar select.on { background: var(--ac); color: #04121f; }
+.originbar select option { color: #000; }
+.originask { max-width: 1400px; margin: 12px auto 0; box-sizing: border-box; width: calc(100% - 32px); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: rgba(95, 180, 255, .1); border: 1px solid rgba(95, 180, 255, .4); border-radius: 12px; padding: 10px 14px; font-size: .9rem; }
+.originask[hidden] { display: none; }
+.originask .go { display: inline-flex; align-items: center; gap: 6px; background: var(--ac); color: #04121f; padding: 7px 12px; border-radius: 9px; font-weight: 700; border: 0; cursor: pointer; font-size: .85rem; }

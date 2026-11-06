@@ -29,6 +29,10 @@
   <div class="seg" id="days" role="tablist" aria-label="Día"></div>
 </header>
 
+<div id="originask" class="originask" hidden>
+    <b>¿Desde dónde salís?</b> Las distancias y horarios se calculan desde ahí (mientras tanto, desde Leones).
+    <span><button class="go" data-origin-gps>📍 Usar mi ubicación</button> <button class="chip" data-origin-town>🏘️ Elegir pueblo</button></span>
+</div>
 <main class="layout">
   <section id="hero" class="card hero">Cargando pronóstico…</section>
 
@@ -88,9 +92,10 @@
   <aside class="card rank">
     <div class="rankhead">
       <h2>Dónde ir</h2>
-      <div class="seg small" id="origin">
-        <button data-o="home" class="on">Desde Leones</button>
+      <div class="seg small originbar" id="origin">
         <button data-o="gps">📍 Mi ubicación</button>
+        <select id="originSel" aria-label="Salir desde un pueblo"></select>
+        <button data-o="pick" title="Tocá un punto del mapa para salir desde ahí">📌 En el mapa</button>
       </div>
     </div>
     <p class="muted" id="rankinfo"></p>

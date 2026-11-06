@@ -12,7 +12,8 @@ Publicado en https://juampipar.github.io/alerta-tornados/
 - **Guía para la primera vez** (tres etapas, errores de novato) y **cómo leer el radar** (colores y formas: celda aislada, línea, gancho).
 - **Mapa** con grilla de potencial (0,75°), localidades, radar animado (RainViewer), satélite GOES visible e infrarrojo (NASA GIBS) y avisos SMN.
 - **Control de hora** para ver la evolución del día, y **Hoy / Mañana / Pasado**.
-- **Ranking "Dónde ir"** con distancia y tiempo desde Leones o desde tu ubicación (GPS), curva del día y botón a Google Maps.
+- **Desde dónde salís**: todo (plan, horarios, distancias, "Dónde ir") se calcula desde tu ubicación (GPS, se sigue mientras manejás), un pueblo de la lista o un punto tocado en el mapa. Se recuerda en el dispositivo; si nunca elegiste y ya diste permiso de ubicación, la usa sola. Leones queda solo como respaldo. Las alertas de Telegram siguen usando Leones (salvo el modo caza, que usa tu ubicación en tiempo real).
+- **Ranking "Dónde ir"** con distancia y tiempo desde tu punto de salida, curva del día y botón a Google Maps.
 - Pestaña de Windy (CAPE) y link a rayos en vivo (LightningMaps no permite insertarse). Instalable en el celular (“Agregar a pantalla de inicio”).
 
 ## Cómo funciona el sistema completo
