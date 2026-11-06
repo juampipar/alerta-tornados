@@ -14,7 +14,7 @@ on:
         description: 'Repetir un momento pasado en modo caza desde Leones (hora UTC, ej. 2026-11-03T21:40). No publica el panel.'
         type: string
         default: ''
-permissions: { contents: read, pages: write, id-token: write }
+permissions: { contents: write, pages: write, id-token: write, issues: read } # contents: write solo para guardar el historial en la rama datos
 concurrency: { group: pages, cancel-in-progress: false }
 jobs:
   deploy:
@@ -60,6 +60,21 @@ jobs:
           ALERT_STATE: .alert-state/state.json
           TEST: ${{ inputs.prueba && '1' || '' }}
           REPLAY_AT: ${{ inputs.repetir }}
+      # Historial: qué se pronosticó y qué pasó (avisos SMN, satélite, tus reportes). Se guarda en la rama "datos".
+      - name: Historial
+        if: ${{ !inputs.repetir }}
+        continue-on-error: true # si falla, el panel se publica igual
+        run: |
+          if git fetch -q --depth=1 origin datos; then git worktree add -q -B datos .datos FETCH_HEAD; else git worktree add -q --orphan -b datos .datos; fi
+          node scripts/historial.mjs _site .datos
+          cd .datos
+          git add historial.json
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -qm "Historial $(date -u +%FT%H:%MZ)"
+            git push -q origin datos
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - uses: actions/cache/save@v4
         if: ${{ always() && !inputs.repetir }}
         continue-on-error: true
