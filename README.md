@@ -67,6 +67,14 @@ La sección **📒 Historial** muestra cuántos avistajes de rotación, embudo o
 ## Varios modelos (GFS, ICON, ECMWF)
 `lib/modelos.mjs`. Cada 6 h (`modelos.json`, reusado entre corridas para cuidar la cuota de Open-Meteo) se calcula el mismo índice con **GFS, ICON y ECMWF por separado**, en los pueblos más una grilla de 1,5°. Para cada zona de caza se ve el máximo de cada modelo cerca de la zona y a qué hora: si los tres llegan a 45 o más, la zona es confiable; si solo uno la ve, es dudosa. La ventana de horas se ensancha para incluir los picos de los modelos que coinciden. Lo muestran el panel ("🧮 Modelos: GFS 72 (17:00) · ICON 65 (18:00) · ECMWF 70 (19:00) → 3 de 3"), Telegram y el resumen para la IA. Un modelo sin datos útiles se descarta solo.
 
+## Entrenamiento con tornados reales (EE.UU.)
+Workflow **Entrenar índice** (`.github/workflows/entrenar.yml`, todas las noches a las 2:23 h y a mano desde Actions), scripts en `scripts/entrenar/` y lógica en `lib/entrenar.mjs`:
+1. **Casos** (`casos.mjs`): tornados EF1+ de la base pública del SPC desde 2022 (un caso por brote: tornados a menos de 50 km y 2 h se juntan) y el doble de casos sin tornado: la mitad el mismo día a 300–600 km de un tornado y la mitad al azar en la temporada, siempre a más de 300 km y 6 h de cualquier tornado.
+2. **Ambientes** (`ambientes.mjs`): para cada caso, el **archivo de pronósticos de Open-Meteo** (los mismos modelos y variables que usa el panel en vivo, así no hay diferencia entre entrenar y usar), con los **vientos espejados al hemisferio sur** (la helicidad tornádica queda negativa, como acá). Se calculan los ingredientes con `metrics()` y el índice actual con `scoreOf()`. Avanza de a tandas (2000 casos por noche) y retoma donde quedó.
+3. **Modelo** (`entrenar.mjs`): regresión logística (energía, cizalla, cizalla baja, helicidad, base de nube, rocío, tapa y dos combinaciones) entrenada con 2022–2023 y **probada con 2024** contra el índice actual (AUC). Solo si le gana por 0,02 o más se usa.
+
+Todo queda en la rama `datos` (`entrenamiento/`). El panel muestra "🧠 Parecido a ambientes de tornado de EE.UU.: N/100" en la mejor zona cuando el modelo mejora al índice. No es una probabilidad real de tornado en Argentina: dice qué tanto se parece el ambiente a los que dieron tornados allá.
+
 ## Cómo se actualiza
 El workflow `Publicar panel` corre **cada 10 minutos** (y en cada push a `main`). El pronóstico se recalcula cada 2 horas (cuota gratuita de Open-Meteo); en las otras corridas solo se renuevan los avisos del SMN (los de muy corto plazo duran 1–2 h): `scripts/build-data.mjs` baja el pronóstico de Open-Meteo y los avisos del SMN, genera `data/forecast.json` y `data/smn.json`, y publica en GitHub Pages. Si el archivo de pronóstico falta o es viejo, el panel lo pide directo a Open-Meteo.
 

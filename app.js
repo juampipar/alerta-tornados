@@ -4,6 +4,7 @@ import { loadHistory } from './lib/historial-ui.mjs';
 import { initRed, setRedLayer } from './lib/red.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from './lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from './lib/modelos.mjs';
+import { featureRow, predict } from './lib/entrenar.mjs';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -425,6 +426,7 @@ function renderHero(rank) {
       <p class="sub">👁 Parar en ${stopTxt(o)} (${vpSpan(o.vp)})</p>
       <p class="sub">Pico <b>${hm(o.peakH)}</b>${ventTxt(o)} · ${o.dist} km desde ${esc(S.origin.label)} (~${o.drive.toFixed(1)} h) · ${timeTxt(o)}</p>
       ${modelsTxt(o)}
+      ${trainedTxt(o)}
       ${biasTxt()}
       ${routeTxt(o) ? `<p class="sub">${routeTxt(o)}</p>` : ''}
       <p class="sub conftxt">${conf(S.day).txt}</p>
@@ -557,6 +559,14 @@ function dayZones(date, max = 2) {
     const acuerdo = zoneAgreement(S.mod, z.ctr, z.r, date); // GFS, ICON y ECMWF por separado
     return { ...shiftZone(z, S.bias), ventana: widenWindow(correctedWindow(w, S.bias), acuerdo, dt), dt, acuerdo };
   });
+}
+// Modelo entrenado con tornados de EE.UU. (solo si en la prueba le ganó al índice actual).
+function trainedTxt(o) {
+  const m = S.tmodel;
+  if (!m?.mejora) return '';
+  const v = Math.round(predict(m, featureRow(ingAt(o.town, o.i))) * 100);
+  const n = (m.tornados_entrenamiento + m.tornados_prueba).toLocaleString('es-AR');
+  return `<p class="sub">🧠 Parecido a ambientes de tornado de EE.UU.: <b>${v}/100</b> <small>(modelo entrenado con ${n} tornados reales; en la prueba con 2024 acertó más que el índice: ${m.auc_modelo} contra ${m.auc_indice})</small></p>`;
 }
 // Qué dice cada modelo de la zona y cuántos coinciden.
 function modelsTxt(o, short = false) {
@@ -983,6 +993,8 @@ loadForecast(); loadSmn(); loadRadar(); loadWrf();
 loadHistory($('#historial'));
 // Corrección aprendida (la calcula el historial en cada corrida).
 fetch('data/historial.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((h) => { if (h?.sesgo) { S.bias = h.sesgo; render(); } }).catch(() => {});
+// Modelo entrenado con tornados de EE.UU. (lo genera el workflow "Entrenar índice").
+fetch('data/modelo-tornado.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((m) => { if (m?.w) { S.tmodel = m; render(); } }).catch(() => {});
 // Índice con cada modelo por separado (GFS, ICON, ECMWF), para ver si coinciden.
 fetch('data/modelos.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((m) => { if (m?.score) { S.mod = m; render(); } }).catch(() => {});
 initRed($('#red'), {

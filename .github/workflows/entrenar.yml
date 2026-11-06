@@ -1,0 +1,46 @@
+name: Entrenar índice
+# Entrena el índice con tornados reales de EE.UU. (SPC) y el ambiente de cada caso (archivo de pronósticos de
+# Open-Meteo, los mismos modelos y variables que usa el panel). Todas las noches baja una tanda de ambientes
+# (cuida la cuota diaria gratuita) hasta completar, y entonces entrena y prueba el modelo contra el índice actual.
+# Todo se guarda en la rama "datos" (entrenamiento/casos.json, ambientes.json y modelo.json).
+on:
+  workflow_dispatch:
+    inputs:
+      maximo:
+        description: 'Máximo de casos a bajar en esta corrida'
+        default: '2000'
+      recrear:
+        description: 'Rehacer la lista de casos desde cero'
+        type: boolean
+        default: false
+  schedule:
+    - cron: '23 5 * * *' # 2:23 h de Argentina
+permissions: { contents: write }
+concurrency: { group: entrenar, cancel-in-progress: false }
+jobs:
+  entrenar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Casos, ambientes y modelo
+        run: |
+          git fetch -q origin datos && git worktree add -q -B datos .datos FETCH_HEAD
+          node scripts/entrenar/casos.mjs .datos
+          node scripts/entrenar/ambientes.mjs .datos "${{ inputs.maximo || '2000' }}"
+          node scripts/entrenar/entrenar.mjs .datos
+          cd .datos
+          git add entrenamiento
+          git diff --cached --quiet && exit 0
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -qm "Entrenamiento $(date -u +%FT%H:%MZ)"
+          # El panel también escribe en la rama datos (cada 10 min): si se adelantó, rebasar y reintentar.
+          for i in 1 2 3 4 5; do
+            git push -q origin datos && exit 0
+            sleep 15
+            git pull -q --rebase origin datos
+          done
+          exit 1
+        env:
+          RECREAR: ${{ inputs.recrear && '1' || '' }}
