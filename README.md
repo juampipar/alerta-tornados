@@ -114,6 +114,8 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 
 - **🗺️ Mapas y pines en Telegram** (`scripts/mapa.py`): los avisos de tormenta (modo caza, granizo, satélite, tormenta hacia Leones) traen un mapa con rutas y pueblos de fondo (OpenStreetMap), cada tormenta con su camino (+30 y +60 min) y la zona donde suele caer el granizo (en las fuertes), vos en azul y en verde adónde ir o hacia dónde escapar. Además un **pin** de Telegram del punto (parada, punto para ver la tormenta o escape): se toca y se abre en el mapa del celular para navegar.
 
+- **📋 Plan de caza con pasos** (aviso del día y cambio de plan): 1) a qué hora salir y a qué base rural ir; 2) de qué hora a qué hora esperar y hacia dónde mirar; 3) si nace una tormenta, el 🎯; 4) **hora de decidir**: si no nació nada a menos de 60 km, volver (o el plan B, otra zona a menos de 1 h 30 de la base); 5) puesta del sol. El vigía sigue el plan: a la hora de decidir avisa qué hacer según el satélite, y 30 min antes de que se ponga el sol avisa que hay que volver. **Ya en camino** (desde 1 h antes de la ventana) el pronóstico no cambia el plan: avisa "seguí el plan, ahora manda el satélite" (solo cambia si aparece una zona 15 puntos mejor). La IA recibe el plan y no lo contradice.
+
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
