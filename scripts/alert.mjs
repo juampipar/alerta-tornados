@@ -416,6 +416,8 @@ Reglas obligatorias:
   tormenta o un aviso nuevo que lo justifique, y decí por qué.
 - Si existe "escape", hay una tormenta encima o muy cerca: decí EXACTAMENTE hacia dónde moverse (rumbo, km y el punto si tiene
   nombre), con esas palabras. Nunca digas solo "movete" sin rumbo ni distancia.
+- Si NO existe "intercepcion", NUNCA recomiendes ir a buscar ninguna tormenta del satélite: o se aleja, o no se llega a
+  tiempo de costado, y perseguirla de atrás mete al usuario en la lluvia y el granizo. Decí que no conviene.
 - Si existe "intercepcion", ese es el punto CALCULADO para ver la mejor tormenta (al costado de su camino, adelante, llegando antes
   que ella y sin cruzarse por delante): recomendá ESE punto con su nombre, cuánto tardás, cuándo pasa la tormenta y hacia dónde escapar.
   No inventes otro punto. Si "aislada" es false, aclará que hay otras tormentas cerca y que es más difícil de ver.
@@ -670,7 +672,8 @@ if (state.chase.on && state.chase.loc) {
       ...(chaseEvent.acp ?? []).map((a) => `• 🚨 Aviso SMN: ${esc(a.event || a.headline)} a ${Math.round(distTo(a, me))} km`),
       ...(chaseEvent.tipo === 'cerca' ? await escapeLines(chaseEvent.cores[0], me)
         : (await intercept(me, nc)) ? ['', ...interceptLines(INTER)]
-        : chaseEvent.tipo === 'estado' ? ['', 'No hay ninguna tormenta fuerte a la que llegues a tiempo: <b>quedate donde estás</b> y esperá el próximo aviso.'] : []),
+        : chaseEvent.tipo === 'estado' ? ['', 'No hay ninguna tormenta fuerte a la que llegues a tiempo: <b>quedate donde estás</b> y esperá el próximo aviso.']
+        : chaseEvent.cores.length ? ['', '➡️ <b>No llegás a verla de costado</b> (se aleja o va muy rápido): <b>no conviene perseguirla</b>. Perseguir de atrás te mete en la lluvia y no la alcanzás. Quedate y esperá el próximo aviso.'] : []),
       `<a href="${RADAR_SMN}">📡 Radar SMN</a> · <a href="${PANEL}">🗺️ Panel</a>`,
     ].join('\n'));
     // Mapa con vos, las tormentas y adónde ir (o escapar). Si no sale, el zoom del satélite.
@@ -813,7 +816,7 @@ if (!state.chase.on && satHunt && (REPLAY || !quiet)) {
     messages.push([
       `🛰️ <b>${cores[0].salto_rayos ? 'Salto de rayos en una tormenta' : `Tormenta ${cores[0].tendencia === 'nueva' ? 'nueva' : 'creciendo'}`} en el Pasillo</b> <i>(satélite de las ${nc.hora} h, posición estimada ahora)</i>`,
       ...cores.map(line),
-      ...((await intercept(HOME, nc)) ? ['', ...interceptLines(INTER)] : []),
+      ...((await intercept(HOME, nc)) ? ['', ...interceptLines(INTER)] : ['', '➡️ <b>No llegás a verla de costado</b> (se aleja o va muy rápido): <b>no conviene perseguirla</b>. Perseguir de atrás te mete en la lluvia y no la alcanzás. Quedate en Leones y esperá el próximo aviso.']),
       `<a href="${RADAR_SMN}">📡 Radar SMN</a> · <a href="${PANEL}">🗺️ Panel</a> · si salís, mandá /caza y compartí tu ubicación (y /guia para saber qué mirar)`,
     ].join('\n'));
     const img = await mapa({ titulo: INTER ? 'Tormenta en el Pasillo: adónde ir para verla' : 'Tormenta en el Pasillo', pie: `Satélite ${nc.hora} h`, yo: { ...HOME, label: 'LEONES' }, tormentas: cores.map(coreSpec),
@@ -837,8 +840,8 @@ if (data) {
   if (!REPLAY) await writeFile(`${dir}/brief.json`, JSON.stringify(brief, null, 1));
 }
 if (brief && messages.length && !env.DRY_RUN && !(chaseOut.length && !chaseEvent && messages.length === chaseOut.length)) {
-  const focus = satEvent && !chaseEvent ? `AVISO DEL SATÉLITE: nació o crece una tormenta fuerte en el Pasillo (ver nucleos_satelite). El usuario está en Leones. Decile si vale salir a buscarla (¿llega antes de que oscurezca? ¿hacia dónde va?), hacia dónde y por qué, o si conviene quedarse.`
-    : chaseEvent ? `MODO CAZA: el usuario está en la ruta (ver "vos"). Decile exactamente qué hacer ahora con las tormentas detectadas por satélite (${chaseEvent.tipo === 'cerca' ? 'hay una tormenta cerca: priorizá su seguridad' : 'hay tormentas nuevas o creciendo'}): quedarse, o moverse (rumbo y km) para quedar de costado y adelante de la mejor, a ~20 km.`
+  const focus = satEvent && !chaseEvent ? `AVISO DEL SATÉLITE: nació o crece una tormenta fuerte en el Pasillo (ver nucleos_satelite). El usuario está en Leones. Si existe "intercepcion", recomendá ESE punto; si no existe, decí que NO conviene salir (se aleja o no se llega de costado) y que el sistema avisa si aparece una a la que llegue.`
+    : chaseEvent ? `MODO CAZA: el usuario está en la ruta (ver "vos"). Decile exactamente qué hacer ahora con las tormentas detectadas por satélite (${chaseEvent.tipo === 'cerca' ? 'hay una tormenta cerca: priorizá su seguridad' : 'hay tormentas nuevas o creciendo'}): si existe "escape", decí hacia dónde moverse; si existe "intercepcion", recomendá ESE punto; si no existe ninguno de los dos, decí que se quede y NO persiga (se aleja o no se llega de costado).`
     : live.length ? 'hay avisos del SMN de tormentas formándose: qué hacer en las próximas 2 horas'
     : 'el día de caza: a dónde ir, a qué hora salir y qué hacer al llegar';
   const adv = await aiAdvice(brief, focus);
