@@ -1,5 +1,5 @@
 {
- "generado": "2026-11-09T15:43:11.661Z",
+ "generado": "2026-11-10T13:35:29.755Z",
  "features": [
   "log_cape",
   "cizalla",
@@ -46,10 +46,10 @@
   1.351251314100878
  ],
  "n_entrenamiento": 3726,
- "n_prueba": 1649,
+ "n_prueba": 1669,
  "tornados_entrenamiento": 1240,
  "tornados_prueba": 553,
- "auc_modelo": 0.951,
- "auc_indice": 0.871,
+ "auc_modelo": 0.95,
+ "auc_indice": 0.868,
  "mejora": true
 }
