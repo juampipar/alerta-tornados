@@ -112,6 +112,8 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 
 - **🔄 Cambió el pronóstico** (vigía): si la zona que te mandó el aviso del día baja (menos de 50, o 10 puntos) o aparece otra 10 puntos mejor, te avisa y te da **la mejor opción de ahora desde donde estás** (tu ubicación del modo caza, o Leones): zona, parada rural, km, hora y ruta. Si no queda ninguna, te dice que vuelvas. Como mucho uno cada 40 min.
 
+- **🗺️ Mapas y pines en Telegram** (`scripts/mapa.py`): los avisos de tormenta (modo caza, granizo, satélite, tormenta hacia Leones) traen un mapa con rutas y pueblos de fondo (OpenStreetMap), cada tormenta con su camino (+30 y +60 min) y la zona donde suele caer el granizo (en las fuertes), vos en azul y en verde adónde ir o hacia dónde escapar. Además un **pin** de Telegram del punto (parada, punto para ver la tormenta o escape): se toca y se abre en el mapa del celular para navegar.
+
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
