@@ -110,6 +110,8 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 
 - **🧊 Se te viene el granizo** (modo caza, `peligroGranizo` en `lib/tormenta.mjs`): si una tormenta fuerte va a pasar a menos de 12 km tuyo en los próximos 35 min (con margen por si se desvía hacia vos), te avisa en el momento, antes que cualquier otro mensaje: a cuántos km pasa, en cuántos minutos, si tiene señales de granizo grande y **hacia dónde moverte ya** (~12 km perpendicular a su camino, sin cruzarla por delante, hasta un punto sobre ruta asfaltada). Una vez por tormenta cada 15 min.
 
+- **🔄 Cambió el pronóstico** (vigía): si la zona que te mandó el aviso del día baja (menos de 50, o 10 puntos) o aparece otra 10 puntos mejor, te avisa y te da **la mejor opción de ahora desde donde estás** (tu ubicación del modo caza, o Leones): zona, parada rural, km, hora y ruta. Si no queda ninguna, te dice que vuelvas. Como mucho uno cada 40 min.
+
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
