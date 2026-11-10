@@ -1,10 +1,10 @@
 // Alertas por Telegram. Corre en el workflow de cada hora, después de build-data.mjs.
 // Uso: node scripts/alert.mjs _site
-// Env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, MIN_SCORE (60), RADIUS_KM (200),
+// Env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, MIN_SCORE (50), RADIUS_KM (200),
 //      ALERT_STATE (archivo donde recuerda lo ya enviado), TEST=1 (manda el resumen igual), DRY_RUN=1 (no envía).
 //
 // Dos mensajes:
-//  1. 🌪️ Día de caza: hoy o mañana alguna zona llega a MIN_SCORE (una vez por día; de nuevo si sube 10).
+//  1. 🌪️ Día de caza (60+) o 🟠 día posible (MIN_SCORE a 59): hoy o mañana alguna zona llega (una vez por día; de nuevo si sube 10).
 //     Entre las 23 y las 7 h no se manda: queda para la mañana.
 //  2. 🚨 Ya se están formando: SOLO en un día de caza, si el SMN emite un aviso a corto plazo
 //     cerca de Leones o de las zonas marcadas. Los avisos del SMN de días comunes no se mandan.
@@ -17,7 +17,8 @@ import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion } fro
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
-const MIN = +(env.MIN_SCORE || 60);
+const MIN = +(env.MIN_SCORE || 50);
+const CLARO = Math.max(MIN, 60); // desde acá es un día de caza claro; entre MIN y CLARO, "día posible"
 const RADIUS = +(env.RADIUS_KM || 200);
 const NEAR_ZONE = 80; // km: aviso del SMN "cerca" de una zona marcada
 const STATE = env.ALERT_STATE || '.alert-state/state.json';
@@ -195,7 +196,9 @@ async function huntMessage(date, label, rank, prev) {
   const side = rumbo(o.mdir - 90);
   const others = opts.slice(1).map((x, k) => `${['2️⃣', '3️⃣', '4️⃣'][k]} Zona ${esc(x.z.name)} · <b>${x.z.v}</b> · pico ${clock(x.peakH * 60)} h\n   👁 ${stopLine(x)}\n   ${x.dist} km · ${timeLine(x)}${x.hit ? ' ⚠️' : ''} · <a href="${ruta(x.vp)}">ruta</a>`);
   return [
-    score >= MIN ? `🌪️ <b>DÍA DE CAZA · ${label}</b> <i>${dayName(date)}</i>` : `🧪 <b>Prueba · ${label}</b> <i>${dayName(date)}</i> · no llega a día de caza`,
+    score >= CLARO ? `🌪️ <b>DÍA DE CAZA · ${label}</b> <i>${dayName(date)}</i>`
+      : score >= MIN ? `🟠 <b>DÍA POSIBLE · ${label}</b> <i>${dayName(date)}</i>\n<i>Potencial moderado: no es un día claro. Vale si estás cerca o con ganas de probar. Si sube a ${CLARO}+, te aviso de nuevo.</i>`
+      : `🧪 <b>Prueba · ${label}</b> <i>${dayName(date)}</i> · no llega a día de caza`,
     `Potencial de tornado <b>${lv.label.toUpperCase()} · ${score}/100</b>${prev >= 0 ? ` <i>(subió de ${prev})</i>` : ''}`,
     '',
     `🎯 <b>Zona ${esc(o.z.name)}</b> · pico a las <b>${clock(o.peakH * 60)} h</b>${ventana(o.z) ? ` · ventana ${ventana(o.z)}` : ''}`,
