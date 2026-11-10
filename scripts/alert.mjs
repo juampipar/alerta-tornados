@@ -16,7 +16,7 @@ import { dirname } from 'node:path';
 import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, ruralStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from '../lib/modelos.mjs';
-import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion, peligroGranizo, comoAlejarse } from '../lib/tormenta.mjs';
+import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion, peligroGranizo, comoAlejarse, paraMirar } from '../lib/tormenta.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -500,7 +500,7 @@ async function aiAdvice(brief, focus) {
 // La mejor tormenta aislada a la que llegás: punto al costado de su camino, adelante, enganchado a una ruta rural.
 let INTER = null, ESCAPE = null;
 async function intercept(me, nc) {
-  const x = mejorIntercepcion({ me, nc, now: NOW });
+  const x = mejorIntercepcion({ me, nc, now: NOW, moderadas: true });
   if (!x) return null;
   const st = await ruralStop(x.base, x.away, fetch, 8);
   const p = st ?? x.base;
@@ -510,6 +510,7 @@ function interceptLines(x) {
   const c = x.c, pasaDir = rumbo(x.mdir + 90);
   const sig = [c.topes_sobresalientes ? '⚡ topes que sobresalen' : null, c.salto_rayos ? '⚡⚡ salto de rayos' : null].filter(Boolean).join(', ');
   return [
+    ...(x.moderada ? ['🎯 <i>Tormenta moderada aislada: para ir a mirarla, con pocas chances de tornado (en el radar puede verse más fuerte que en el satélite).</i>'] : []),
     `🎯 <b>Para verla:</b> ${x.aislada ? '<b>tormenta aislada</b>' : 'tormenta (hay otras cerca)'} ${esc(c.fuerza)} a ${x.d} km al ${x.desde} ${x.desde_quien === 'vos' ? 'tuyo' : 'de Leones'}, va al <b>${rumbo(x.mdir)}</b> a ~${c.kmh} km/h${sig ? ` · ${sig}` : ''}`,
     x.quedate ? `   <b>Quedate donde estás</b>: pasa a ~${x.lado} km al ${pasaDir} tuyo en ~${x.pasa_min} min`
       : `   Andá a ${x.stop ? `🌾 <b>${esc(x.stop.label)}</b>${x.stop.cruce ? ' (cruce, dos salidas)' : ''}` : 'este punto'} · llegás en ~${x.llegas_min} min, ella pasa a ~${x.lado} km al <b>${pasaDir}</b> tuyo en ~${x.pasa_min} min`,
@@ -628,7 +629,7 @@ if (state.chase.on && state.chase.loc) {
   const strong = (c) => c.fuerza !== 'moderada' || c.topes_sobresalientes > 0;
   state.chase.seen ??= {};
   const key = (c) => `${c.lat.toFixed(1)},${c.lon.toFixed(1)}`;
-  const news = cores.filter((c) => (c.tendencia === 'nueva' || c.tendencia === 'creciendo') && (strong(c) || c.d <= 60) && !state.chase.seen[key(c)]);
+  const news = cores.filter((c) => (c.tendencia === 'nueva' || c.tendencia === 'creciendo') && (strong(c) || c.d <= 60 || (c.d <= 100 && paraMirar(c, cores))) && !state.chase.seen[key(c)]);
   const danger = cores.find((c) => c.d <= 20 || (c.coming != null && c.coming <= 40 && c.d <= 50));
   const acp = (smn?.alerts ?? []).filter((a) => a.shortTerm && distTo(a, me) <= 60 && !state.chase.seen['acp:' + a.id]);
   // 🧊 Se te viene el granizo: tiene prioridad sobre todo (no espera el intervalo entre mensajes).
@@ -640,6 +641,8 @@ if (state.chase.on && state.chase.loc) {
     const p = dest ?? movePoint(me, gr.escape, 12);
     const c = gr.c, sig = [c.tope_min_C <= -63 ? `topes muy fríos (${c.tope_min_C} °C)` : null, c.topes_sobresalientes ? 'topes que sobresalen' : null, c.salto_rayos ? 'salto de rayos' : null].filter(Boolean).join(', ');
     chaseOut.push([
+      `👉 <b>QUÉ HACER: movete ya ~12 km hacia el ${gr.rumbo_escape}</b>`,
+      '',
       `🧊 <b>SE TE VIENE EL GRANIZO</b>`,
       gr.en_min <= 3 ? `La tormenta está <b>encima o a ${gr.d} km</b> tuyo.` : `Una tormenta ${esc(c.fuerza)} ${gr.pasa_a < 3 ? '<b>viene derecho hacia vos</b>' : `va a pasar a <b>~${gr.pasa_a} km</b> tuyo`}: llega en <b>~${gr.en_min} min</b>${c.kmh ? ` (a ${c.kmh} km/h)` : ''}.`,
       ...(gr.grande ? [`⚠️ Señales de granizo grande: ${sig}.`] : []),
@@ -663,15 +666,20 @@ if (state.chase.on && state.chase.loc) {
     for (const c of chaseEvent.cores) state.chase.seen[key(c)] = Date.now();
     for (const a of chaseEvent.acp ?? []) state.chase.seen['acp:' + a.id] = Date.now();
     state.chase.lastMsg = Date.now();
-    const line = (c) => `• <b>${esc(c.fuerza)}</b> (${c.tope_min_C} °C${c.topes_sobresalientes ? `, ${c.topes_sobresalientes} topes que sobresalen` : ''}) · ${esc(c.tendencia)} · ${esc(c.cerca_de)}\n   a <b>${c.d} km al ${c.from}</b> tuyo${c.va_hacia ? ` · va al ${c.va_hacia}${c.kmh ? ` a ${c.kmh} km/h` : ''}` : ''}${c.coming != null ? ` · <b>viene hacia vos (~${c.coming} min)</b>` : ''}`;
+    const line = (c) => `• <b>${esc(c.fuerza)}</b> (${c.tope_min_C} °C${c.topes_sobresalientes ? `, ${c.topes_sobresalientes} topes que sobresalen` : ''}) · ${esc(c.tendencia)} · ${esc(c.cerca_de)}\n   a <b>${c.d} km al ${c.from}</b> tuyo${c.va_hacia ? ` · va al ${c.va_hacia}${c.kmh ? ` a ${c.kmh} km/h` : ''}` : ''}${c.coming != null ? ` · <b>se acerca (~${c.coming} min)</b>` : ''}`;
     const age = chaseEvent.cores[0]?.edadMin;
     const head = chaseEvent.tipo === 'cerca' ? '⚠️ <b>Tormenta cerca tuyo</b>' : chaseEvent.tipo === 'estado' ? '📍 <b>Cómo viene todo</b>' : '🛰️ <b>Se está formando algo</b>';
+    const extra = chaseEvent.tipo === 'cerca' ? await escapeLines(chaseEvent.cores[0], me) : (await intercept(me, nc)) ? ['', ...interceptLines(INTER)] : null;
+    const queHacer = chaseEvent.tipo === 'cerca' ? (ESCAPE ? `Movete ~${ESCAPE.km} km hacia el ${ESCAPE.hacia}${ESCAPE.fuerte ? ' ya' : ' (opcional: es moderada)'}` : 'Quedate: se está alejando')
+      : INTER ? (INTER.quedate ? 'Quedate donde estás: la vas a ver pasar de costado' : `Andá al punto 🎯${INTER.stop ? ` (${INTER.stop.label})` : ''}: llegás en ~${INTER.llegas_min} min`)
+      : 'Quedate: no hay ninguna para ver de costado';
     chaseOut.push([
+      `👉 <b>QUÉ HACER: ${esc(queHacer)}</b>`,
+      '',
       `${head} <i>(posición estimada ahora · satélite de las ${nc?.hora ?? '–'} h${age ? `, hace ${age} min` : ''})</i>`,
       ...(chaseEvent.cores.length ? chaseEvent.cores.map(line) : ['Sin núcleos de tormenta a menos de 150 km tuyo.']),
       ...(chaseEvent.acp ?? []).map((a) => `• 🚨 Aviso SMN: ${esc(a.event || a.headline)} a ${Math.round(distTo(a, me))} km`),
-      ...(chaseEvent.tipo === 'cerca' ? await escapeLines(chaseEvent.cores[0], me)
-        : (await intercept(me, nc)) ? ['', ...interceptLines(INTER)]
+      ...(extra ? extra
         : chaseEvent.tipo === 'estado' ? ['', 'No hay ninguna tormenta fuerte a la que llegues a tiempo: <b>quedate donde estás</b> y esperá el próximo aviso.']
         : chaseEvent.cores.length ? ['', '➡️ <b>No llegás a verla de costado</b> (se aleja o va muy rápido): <b>no conviene perseguirla</b>. Perseguir de atrás te mete en la lluvia y no la alcanzás. Quedate y esperá el próximo aviso.'] : []),
       `<a href="${RADAR_SMN}">📡 Radar SMN</a> · <a href="${PANEL}">🗺️ Panel</a>`,
@@ -800,8 +808,9 @@ if (!state.chase.on && satHunt && (REPLAY || !quiet)) {
   state.satSeen ??= {};
   for (const [k, t] of Object.entries(state.satSeen)) if (NOW - t > 4 * 3600e3) delete state.satSeen[k];
   const key = (c) => `${(Math.round(c.lat * 5) / 5).toFixed(1)},${(Math.round(c.lon * 5) / 5).toFixed(1)}`;
-  const cand = (fresh ? nc.celulas : []).filter((c) => (c.salto_rayos || ((c.tendencia === 'nueva' || c.tendencia === 'creciendo')
-    && (c.fuerza !== 'moderada' || c.topes_sobresalientes > 0))) && !state.satSeen[key(c)]);
+  const todasNc = fresh ? nc.celulas : [];
+  const cand = todasNc.filter((c) => (c.salto_rayos || ((c.tendencia === 'nueva' || c.tendencia === 'creciendo')
+    && (c.fuerza !== 'moderada' || c.topes_sobresalientes > 0)) || (paraMirar(c, todasNc) && km(HOME, c) <= 100)) && !state.satSeen[key(c)]);
   if (cand.length && NOW - (state.satLast ?? 0) > 30 * 60e3) {
     const cores = cand.sort((a, b) => (b.salto_rayos ? 1 : 0) - (a.salto_rayos ? 1 : 0) || b.topes_sobresalientes - a.topes_sobresalientes || a.tope_min_C - b.tope_min_C).slice(0, 3).map((c0) => {
       const est = coreAt(c0, nc.hora_utc, NOW);
@@ -813,10 +822,13 @@ if (!state.chase.on && satHunt && (REPLAY || !quiet)) {
     const rayos = (c) => (c.rayos_10min == null ? '' : c.salto_rayos ? `\n   ⚡⚡ <b>Salto de rayos</b>: ${c.rayos_10min} en 10 min (antes ${c.rayos_10min_antes}) · suele anticipar granizo, viento o rotación en 10–30 min`
       : c.rayos_10min ? ` · ${c.rayos_10min} rayos en 10 min` : '');
     const line = (c) => `• <b>${esc(c.fuerza)}</b> (${c.tope_min_C} °C${c.topes_sobresalientes ? `, ⚡ ${c.topes_sobresalientes} topes que sobresalen` : ''}) · <b>${esc(c.tendencia)}</b>${rayos(c)}\n   ${esc(c.cerca_de)} · a ${c.d} km al ${c.from} de Leones${c.va_hacia ? ` · va al ${c.va_hacia}${c.kmh ? ` a ~${c.kmh} km/h` : ''}` : ''}`;
+    const hay = await intercept(HOME, nc);
     messages.push([
+      `👉 <b>QUÉ HACER: ${hay ? (INTER.quedate ? 'quedate en Leones: la vas a ver pasar de costado' : `si querés verla, salí al punto 🎯${INTER.stop ? ` (${esc(INTER.stop.label)})` : ''}: llegás en ~${INTER.llegas_min} min`) : 'quedate: no hay ninguna para ver de costado'}</b>`,
+      '',
       `🛰️ <b>${cores[0].salto_rayos ? 'Salto de rayos en una tormenta' : `Tormenta ${cores[0].tendencia === 'nueva' ? 'nueva' : 'creciendo'}`} en el Pasillo</b> <i>(satélite de las ${nc.hora} h, posición estimada ahora)</i>`,
       ...cores.map(line),
-      ...((await intercept(HOME, nc)) ? ['', ...interceptLines(INTER)] : ['', '➡️ <b>No llegás a verla de costado</b> (se aleja o va muy rápido): <b>no conviene perseguirla</b>. Perseguir de atrás te mete en la lluvia y no la alcanzás. Quedate en Leones y esperá el próximo aviso.']),
+      ...(hay ? ['', ...interceptLines(INTER)] : ['', '➡️ <b>No llegás a verla de costado</b> (se aleja o va muy rápido): <b>no conviene perseguirla</b>. Perseguir de atrás te mete en la lluvia y no la alcanzás. Quedate en Leones y esperá el próximo aviso.']),
       `<a href="${RADAR_SMN}">📡 Radar SMN</a> · <a href="${PANEL}">🗺️ Panel</a> · si salís, mandá /caza y compartí tu ubicación (y /guia para saber qué mirar)`,
     ].join('\n'));
     const img = await mapa({ titulo: INTER ? 'Tormenta en el Pasillo: adónde ir para verla' : 'Tormenta en el Pasillo', pie: `Satélite ${nc.hora} h`, yo: { ...HOME, label: 'LEONES' }, tormentas: cores.map(coreSpec),
@@ -869,6 +881,8 @@ if (!REPLAY) {
       const ac = aciertos(state.stormLog);
       const acTxt = ['alta', 'media', 'baja'].filter((k) => ac[k]).map((k) => `${NIVEL[k].emoji} ${ac[k].llegaron} de ${ac[k].total}`).join(' · ');
       messages.push([
+        `👉 <b>QUÉ HACER: ${x.granizo.nivel === 'poco probable' ? 'nada urgente; si querés, guardá el auto' : '<u>guardá el auto bajo techo</u>'}${x.eta ? ` (llega en ~${x.eta} min)` : ''}</b>`,
+        '',
         `⛈️ <b>Tormenta fuerte hacia ${esc(me.name)}</b>`,
         `${n.emoji} <b>${n.txt}</b>${cuando}`,
         ...(x.fuente === 'smn' ? [`🚨 Aviso a corto plazo del SMN: ${esc(x.evento || 'tormentas')}${x.hasta ? ` · hasta las ${hhmm(x.hasta)}` : ''}`] : []),
