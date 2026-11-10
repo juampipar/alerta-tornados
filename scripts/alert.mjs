@@ -9,6 +9,9 @@
 //  2. 🚨 Ya se están formando: SOLO en un día de caza, si el SMN emite un aviso a corto plazo
 //     cerca de Leones o de las zonas marcadas. Los avisos del SMN de días comunes no se mandan.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, ruralStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
@@ -150,6 +153,23 @@ const stopWhy = (o) => {
     + (st.pueblo ? `\n   ⛽ Cargá nafta y comprá algo antes, en ${esc(st.pueblo.name)}` : '');
 };
 const ruta = (p) => maps(+p.lat.toFixed(4), +p.lon.toFixed(4));
+// 🗺️ Mapa para Telegram (scripts/mapa.py): rutas de fondo, tormentas con su camino, vos y adónde ir.
+// Sin enviar (panel, DRY_RUN) no se dibuja, salvo MAPA=1 (pruebas).
+let mapN = 0;
+const RUMBO_DEG = { norte: 0, noreste: 45, este: 90, sudeste: 135, sur: 180, sudoeste: 225, oeste: 270, noroeste: 315 };
+const coreSpec = (c) => ({ lat: c.lat, lon: c.lon, fuerza: c.fuerza, mov_deg: c.mov_deg ?? RUMBO_DEG[c.va_hacia] ?? null, kmh: c.kmh ?? null, label: `${c.fuerza} ${c.tope_min_C} °C` });
+async function mapa(spec) {
+  if (env.DRY_RUN && !env.MAPA) return null;
+  try {
+    mapN++;
+    const out = `${dir}/mapa_${mapN}.png`, req = `${dir}/mapa_${mapN}.json`;
+    await writeFile(req, JSON.stringify({ ...spec, out }));
+    await promisify(execFile)('python3', [fileURLToPath(new URL('./mapa.py', import.meta.url)), req], { timeout: 90000 });
+    return out;
+  } catch (e) { console.error('mapa falló:', e.message); return null; }
+}
+// Pin de Telegram: al tocarlo se abre en el mapa del celular para ir.
+const pin2 = (p, title, address = '') => ({ venue: { lat: +p.lat.toFixed(5), lon: +p.lon.toFixed(5), title: String(title).slice(0, 60), address: String(address).slice(0, 100) } });
 const timeLine = (o) => !o.reachable ? `no llegás antes del pico` : o.late ? `<b>salí ya</b> (llegás ${clock(o.arriveAt * 60)})` : `salir <b>${clock(o.leave * 60)}</b>`;
 function bestTowns(date) {
   const idx = hoursLeft(date);
@@ -237,7 +257,7 @@ if (data) {
     // Plan de hoy (para avisar si después cambia): la zona y la parada que se mandaron.
     if (fire && off === 0) {
       const o = (await optionsFor(date))[0];
-      if (o) state.plan = { date, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, t: NOW };
+      if (o) { state.plan = { date, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, t: NOW }; messages.push(pin2(o.vp, `Parada · Zona ${o.z.name}`, o.stop?.label ?? 'punto aproximado')); }
     }
   }
 }
@@ -548,13 +568,16 @@ if (state.chase.on && state.chase.loc) {
     const c = gr.c, sig = [c.tope_min_C <= -63 ? `topes muy fríos (${c.tope_min_C} °C)` : null, c.topes_sobresalientes ? 'topes que sobresalen' : null, c.salto_rayos ? 'salto de rayos' : null].filter(Boolean).join(', ');
     chaseOut.push([
       `🧊 <b>SE TE VIENE EL GRANIZO</b>`,
-      gr.en_min <= 3 ? `La tormenta está <b>encima o a ${gr.d} km</b> tuyo.` : `Una tormenta ${esc(c.fuerza)} va a pasar a <b>~${gr.pasa_a} km</b> tuyo en <b>~${gr.en_min} min</b>${c.kmh ? ` (viene a ${c.kmh} km/h)` : ''}.`,
+      gr.en_min <= 3 ? `La tormenta está <b>encima o a ${gr.d} km</b> tuyo.` : `Una tormenta ${esc(c.fuerza)} ${gr.pasa_a < 3 ? '<b>viene derecho hacia vos</b>' : `va a pasar a <b>~${gr.pasa_a} km</b> tuyo`}: llega en <b>~${gr.en_min} min</b>${c.kmh ? ` (a ${c.kmh} km/h)` : ''}.`,
       ...(gr.grande ? [`⚠️ Señales de granizo grande: ${sig}.`] : []),
       gr.lado_granizo ? '❗ Estás del lado donde cae el granizo.' : null,
       `👉 <b>Movete ya ~12 km hacia el ${gr.rumbo_escape}</b>${dest ? `, hasta 🌾 <b>${esc(dest.label)}</b>` : ''}. No la cruces por delante.`,
       `<a href="${ruta(p)}">🗺️ Ruta para escapar</a>`,
       '<i>Si ya caen piedras: techo firme (estación de servicio, galpón) y lejos de los vidrios.</i>',
     ].filter(Boolean).join('\n'));
+    const img = await mapa({ titulo: `Granizo: movete ya ${'~12 km'} al ${gr.rumbo_escape}`, pie: `Satélite ${nc?.hora ?? ''} h`, yo: { ...me, label: 'VOS' }, tormentas: [coreSpec(c)], escape: { ...p, label: dest ? `ESCAPÁ: ${dest.label}` : 'ESCAPÁ' } });
+    if (img) chaseOut.push({ photo: img, caption: `🗺️ Azul = vos · círculo = tormenta y su camino (+30/+60 min) · violeta = granizo · flecha verde = hacia dónde escapar.` });
+    chaseOut.push(pin2(p, `Escapá hasta acá (${gr.rumbo_escape})`, dest?.label ?? ''));
     state.chase.seen[grKey] = NOW; state.chase.lastGr = NOW; grSent = true;
   }
   const since = Date.now() - (state.chase.lastMsg ?? 0);
@@ -579,8 +602,17 @@ if (state.chase.on && state.chase.loc) {
         : chaseEvent.tipo === 'estado' ? ['', 'No hay ninguna tormenta fuerte a la que llegues a tiempo: <b>quedate donde estás</b> y esperá el próximo aviso.'] : []),
       `<a href="${PANEL}">📡 Radar y mapa</a>`,
     ].join('\n'));
-    // Zoom del satélite de la tormenta principal (la misma imagen que analiza la IA).
-    const z = chaseEvent.cores.find((c) => c.imagen);
+    // Mapa con vos, las tormentas y adónde ir (o escapar). Si no sale, el zoom del satélite.
+    const dest = chaseEvent.tipo === 'cerca' ? (ESCAPE ? { lat: ESCAPE.lat, lon: ESCAPE.lon, label: ESCAPE.punto ? `ESCAPÁ: ${ESCAPE.punto}` : `ESCAPÁ (${ESCAPE.hacia})`, esc: true } : null)
+      : INTER ? { lat: INTER.p.lat, lon: INTER.p.lon, label: INTER.stop ? `IR ACÁ: ${INTER.stop.label}` : 'IR ACÁ (ver de costado)' } : null;
+    const img = chaseEvent.cores.length ? await mapa({
+      titulo: chaseEvent.tipo === 'cerca' ? (ESCAPE ? `Tormenta cerca: movete ~${ESCAPE.km} km al ${ESCAPE.hacia}` : 'Tormenta cerca: se aleja') : dest ? 'Adónde ir para ver la tormenta' : 'Tormentas cerca tuyo',
+      pie: `Satélite ${nc?.hora ?? ''} h`, yo: { ...me, label: 'VOS' }, tormentas: chaseEvent.cores.map(coreSpec),
+      ...(dest ? (dest.esc ? { escape: dest } : { destino: dest }) : {}),
+    }) : null;
+    if (img) chaseOut.push({ photo: img, caption: `🗺️ Azul = vos · círculos = tormentas y su camino (+30/+60 min) · violeta = granizo · verde = ${dest?.esc ? 'hacia dónde escapar' : 'adónde ir'}.` });
+    if (dest) chaseOut.push(pin2(dest, dest.esc ? `Alejate hasta acá (${ESCAPE.hacia})` : 'Punto para ver la tormenta', dest.label.replace(/^(IR ACÁ|ESCAPÁ): ?/, '')));
+    const z = img ? null : chaseEvent.cores.find((c) => c.imagen);
     if (z) chaseOut.push({ photo: `${dir}/${z.imagen}`, caption: `🛰️ Zoom satélite: ${esc(z.cerca_de)} · tope ${z.tope_min_C} °C${z.topes_sobresalientes ? ` · ⚡ ${z.topes_sobresalientes} topes que sobresalen` : ''}. Blanco/magenta/rojo = topes más fríos (corriente ascendente fuerte).` });
   }
 }
@@ -631,6 +663,7 @@ if (!REPLAY && data && state.plan?.date === today && !state.plan.cerrado && !qui
       ]),
       `<a href="${PANEL}">📡 Mapa</a>`,
     ].join('\n'));
+    if (o) messages.push(pin2(o.vp, `Parada · Zona ${o.z.name}`, o.stop?.label ?? 'punto aproximado'));
     state.planMsg = NOW;
     state.plan = o ? { date: today, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, t: NOW } : { ...plan, cerrado: true };
   }
@@ -667,7 +700,11 @@ if (!state.chase.on && satHunt && (REPLAY || !quiet)) {
       ...((await intercept(HOME, nc)) ? ['', ...interceptLines(INTER)] : []),
       `<a href="${PANEL}">📡 Mirá el radar y el mapa</a> · si salís, mandá /caza y compartí tu ubicación`,
     ].join('\n'));
-    const z = cores.find((c) => c.imagen);
+    const img = await mapa({ titulo: INTER ? 'Tormenta en el Pasillo: adónde ir para verla' : 'Tormenta en el Pasillo', pie: `Satélite ${nc.hora} h`, yo: { ...HOME, label: 'LEONES' }, tormentas: cores.map(coreSpec),
+      ...(INTER ? { destino: { lat: INTER.p.lat, lon: INTER.p.lon, label: INTER.stop ? `IR ACÁ: ${INTER.stop.label}` : 'IR ACÁ (ver de costado)' } } : {}) });
+    if (img) messages.push({ photo: img, caption: '🗺️ Círculos = tormentas y su camino (+30/+60 min) · violeta = granizo · verde = adónde ir para verla de costado.' });
+    if (INTER) messages.push(pin2(INTER.p, 'Punto para ver la tormenta', INTER.stop?.label ?? ''));
+    const z = img ? null : cores.find((c) => c.imagen);
     if (z) messages.push({ photo: `${dir}/${z.imagen}`, caption: `🛰️ Zoom satélite: ${esc(z.cerca_de)} · tope ${z.tope_min_C} °C${z.topes_sobresalientes ? ` · ⚡ ${z.topes_sobresalientes} topes que sobresalen` : ''}.` });
   }
 }
@@ -724,6 +761,10 @@ if (!REPLAY) {
         `<i>El satélite no ve el granizo, da señales: solo un aviso del SMN o alguien que lo vea lo confirma.</i>`,
         `<a href="${PANEL}">📡 Mapa y satélite</a>`,
       ].join('\n'));
+      if (c) {
+        const img = await mapa({ titulo: `Tormenta hacia ${me.name}: ${n.txt.toLowerCase()}`, pie: `Satélite ${nc?.hora ?? ''} h`, yo: { ...me, label: me.name.toUpperCase() }, tormentas: [coreSpec(c)] });
+        if (img) messages.push({ photo: img, caption: '🗺️ Círculo = tormenta y su camino (+30/+60 min) · violeta = donde suele caer el granizo.' });
+      }
       state.storm = { activa: true, last: NOW, llega: R[x.llega], gran: G[x.granizo.nivel] };
       state.stormLog.push({ t: NOW, eta: x.eta, llega: x.llega, granizo: x.granizo.nivel, me: { lat: me.lat, lon: me.lon } });
     }
@@ -735,7 +776,7 @@ if (!REPLAY) {
 }
 
 /* ---------- Envío ---------- */
-console.log(messages.length ? messages.map((m) => (typeof m === 'object' ? `[foto ${m.photo}] ${m.caption}` : m)).join('\n\n———\n\n') : `Nada para avisar (umbral ${MIN}, ${clock(nowMin)} h).`);
+console.log(messages.length ? messages.map((m) => (m?.venue ? `[pin ${m.venue.lat},${m.venue.lon}] ${m.venue.title}` : typeof m === 'object' ? `[foto ${m.photo}] ${m.caption}` : m)).join('\n\n———\n\n') : `Nada para avisar (umbral ${MIN}, ${clock(nowMin)} h).`);
 const { TELEGRAM_BOT_TOKEN: token, TELEGRAM_CHAT_ID: chat } = env;
 if (REPLAY && messages.length) {
   const when = new Date(NOW - 3 * 3600e3).toISOString().replace('T', ' ').slice(0, 16);
@@ -750,13 +791,18 @@ if (!token || !chat) {
 let ok = true;
 for (const m of messages) {
   let r;
-  if (typeof m === 'object' && m.photo) {
+  if (m?.venue) {
+    r = await fetch(`https://api.telegram.org/bot${token}/sendVenue`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, latitude: m.venue.lat, longitude: m.venue.lon, title: m.venue.title, address: m.venue.address || ' ' }),
+    });
+  } else if (typeof m === 'object' && m.photo) {
     try {
       const fd = new FormData();
       fd.append('chat_id', String(chat));
       fd.append('caption', m.caption);
       fd.append('parse_mode', 'HTML');
-      fd.append('photo', new Blob([await readFile(m.photo)], { type: 'image/png' }), 'zoom.png');
+      fd.append('photo', new Blob([await readFile(m.photo)], { type: 'image/png' }), 'mapa.png');
       r = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: fd });
     } catch (e) { console.error('Telegram (foto) falló:', e.message); continue; }
   } else {
