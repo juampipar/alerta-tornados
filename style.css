@@ -398,3 +398,7 @@ footer p { margin: 4px 0; }
 .storm.baja { border-color: rgba(255, 212, 59, .6); }
 .storm p { margin: 0; }
 .storm .why { color: var(--mut); font-size: .88rem; }
+
+/* 🎯 Punto para ver la mejor tormenta */
+.intermark span { font-size: 22px; filter: drop-shadow(0 0 4px rgba(0, 0, 0, .8)); }
+.leaflet-tooltip.intertip { white-space: normal; width: min(260px, 70vw); }
