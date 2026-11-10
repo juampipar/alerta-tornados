@@ -13,7 +13,7 @@ import { dirname } from 'node:path';
 import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, ruralStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from '../lib/modelos.mjs';
-import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion } from '../lib/tormenta.mjs';
+import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion, peligroGranizo } from '../lib/tormenta.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -437,8 +437,9 @@ function interceptLines(x) {
   const sig = [c.topes_sobresalientes ? '⚡ topes que sobresalen' : null, c.salto_rayos ? '⚡⚡ salto de rayos' : null].filter(Boolean).join(', ');
   return [
     `🎯 <b>Para verla:</b> ${x.aislada ? '<b>tormenta aislada</b>' : 'tormenta (hay otras cerca)'} ${esc(c.fuerza)} a ${x.d} km al ${x.desde} ${x.desde_quien === 'vos' ? 'tuyo' : 'de Leones'}, va al <b>${rumbo(x.mdir)}</b> a ~${c.kmh} km/h${sig ? ` · ${sig}` : ''}`,
-    x.quedate ? `   <b>Quedate donde estás</b>: pasa a ~15 km al ${pasaDir} tuyo en ~${x.pasa_min} min`
-      : `   Andá a ${x.stop ? `🌾 <b>${esc(x.stop.label)}</b>${x.stop.cruce ? ' (cruce, dos salidas)' : ''}` : 'este punto'} · llegás en ~${x.llegas_min} min, ella pasa a ~15 km al <b>${pasaDir}</b> tuyo en ~${x.pasa_min} min`,
+    x.quedate ? `   <b>Quedate donde estás</b>: pasa a ~${x.lado} km al ${pasaDir} tuyo en ~${x.pasa_min} min`
+      : `   Andá a ${x.stop ? `🌾 <b>${esc(x.stop.label)}</b>${x.stop.cruce ? ' (cruce, dos salidas)' : ''}` : 'este punto'} · llegás en ~${x.llegas_min} min, ella pasa a ~${x.lado} km al <b>${pasaDir}</b> tuyo en ~${x.pasa_min} min`,
+    `   🧊 El granizo cae del lado ${pasaDir} de la tormenta: vos quedás del otro lado${x.granizo_grande ? `, a ${x.lado} km porque tiene señales de <b>granizo grande</b>` : ''}.`,
     `   Si se te acerca, escapá hacia el <b>${rumbo(x.away)}</b>. Nunca te cruces por delante. <a href="${ruta(x.p)}">🗺️ Ruta al punto</a>`,
   ];
 }
@@ -512,8 +513,28 @@ if (state.chase.on && state.chase.loc) {
   const news = cores.filter((c) => (c.tendencia === 'nueva' || c.tendencia === 'creciendo') && (strong(c) || c.d <= 60) && !state.chase.seen[key(c)]);
   const danger = cores.find((c) => c.d <= 20 || (c.coming != null && c.coming <= 40 && c.d <= 50));
   const acp = (smn?.alerts ?? []).filter((a) => a.shortTerm && distTo(a, me) <= 60 && !state.chase.seen['acp:' + a.id]);
+  // 🧊 Se te viene el granizo: tiene prioridad sobre todo (no espera el intervalo entre mensajes).
+  const gr = peligroGranizo({ me, nc: ncFresh ? nc : null, now: NOW });
+  const grKey = gr ? 'gr:' + `${gr.c.lat.toFixed(1)},${gr.c.lon.toFixed(1)}` : null;
+  let grSent = false;
+  if (gr && NOW - (state.chase.seen[grKey] ?? 0) > 15 * 60e3 && NOW - (state.chase.lastGr ?? 0) > 12 * 60e3) {
+    const dest = await ruralStop(movePoint(me, gr.escape, 12), gr.escape, fetch, 8);
+    const p = dest ?? movePoint(me, gr.escape, 12);
+    const c = gr.c, sig = [c.tope_min_C <= -63 ? `topes muy fríos (${c.tope_min_C} °C)` : null, c.topes_sobresalientes ? 'topes que sobresalen' : null, c.salto_rayos ? 'salto de rayos' : null].filter(Boolean).join(', ');
+    chaseOut.push([
+      `🧊 <b>SE TE VIENE EL GRANIZO</b>`,
+      gr.en_min <= 3 ? `La tormenta está <b>encima o a ${gr.d} km</b> tuyo.` : `Una tormenta ${esc(c.fuerza)} va a pasar a <b>~${gr.pasa_a} km</b> tuyo en <b>~${gr.en_min} min</b>${c.kmh ? ` (viene a ${c.kmh} km/h)` : ''}.`,
+      ...(gr.grande ? [`⚠️ Señales de granizo grande: ${sig}.`] : []),
+      gr.lado_granizo ? '❗ Estás del lado donde cae el granizo.' : null,
+      `👉 <b>Movete ya ~12 km hacia el ${gr.rumbo_escape}</b>${dest ? `, hasta 🌾 <b>${esc(dest.label)}</b>` : ''}. No la cruces por delante.`,
+      `<a href="${ruta(p)}">🗺️ Ruta para escapar</a>`,
+      '<i>Si ya caen piedras: techo firme (estación de servicio, galpón) y lejos de los vidrios.</i>',
+    ].filter(Boolean).join('\n'));
+    state.chase.seen[grKey] = NOW; state.chase.lastGr = NOW; grSent = true;
+  }
   const since = Date.now() - (state.chase.lastMsg ?? 0);
-  if (danger && since > 10 * 60e3) chaseEvent = { tipo: 'cerca', cores: [danger, ...news.filter((c) => c !== danger).slice(0, 2)] };
+  if (grSent) state.chase.lastMsg = Date.now(); // el de granizo ya dice lo urgente
+  else if (danger && since > 10 * 60e3) chaseEvent = { tipo: 'cerca', cores: [danger, ...news.filter((c) => c !== danger).slice(0, 2)] };
   else if ((news.length || acp.length) && since > 20 * 60e3) chaseEvent = { tipo: 'novedad', cores: news.slice(0, 3), acp };
   else if (state.chase.force) chaseEvent = { tipo: 'estado', cores: cores.slice(0, 3) };
   state.chase.force = false;
