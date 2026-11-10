@@ -119,6 +119,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Otras zonas a las que se puede ir (2.ª a 4.ª), una línea cada una.
 // Opciones (paradas) del día, como en el panel: estación de servicio más cercana al punto ideal
 // y primero las que se llega a tiempo desde Leones.
+// ¿Conviene ir? No si el pico es de noche, si es un viaje largo (> 2 h 30) para un día moderado, o si los
+// modelos no coinciden (solo uno la ve). Devuelve la lista de motivos (vacía = conviene).
+function porQueNo(o, date) {
+  const m = [];
+  const ocaso = sunsetHour(HOME.lat, HOME.lon, date);
+  const inicio = o.z.ventana ? o.z.ventana[0] : o.peakH;
+  if (inicio > ocaso - 0.5) m.push(`el pico es de noche (${clock(o.peakH * 60)} h; el sol se pone ${clock(ocaso * 60)} h)`);
+  if (o.z.v < 60 && o.drive > 2.5) m.push(`son ${dur(o.drive)} de viaje para un día moderado`);
+  if (o.z.acuerdo?.acuerdo === 'bajo') m.push('los modelos no coinciden (solo uno la ve)');
+  return m;
+}
 const optCache = {};
 async function optionsFor(date) {
   if (optCache[date]) return optCache[date];
@@ -140,7 +151,10 @@ async function optionsFor(date) {
     const k = plainKey(o.vp);
     if (!(k in state.places)) { await sleep(1100); state.places[k] = await placeName(o.vp); }
     o.place = state.places[k];
+    o.noConviene = porQueNo(o, date);
   }
+  // Primero las que conviene (de día, cerca o día claro, modelos de acuerdo); el resto queda igual.
+  opts.sort((a, b) => (a.noConviene.length > 0) - (b.noConviene.length > 0));
   return (optCache[date] = opts);
 }
 const stopLine = (o) => o.stop?.kind === 'rural' ? `🌾 <b>${esc(o.stop.label)}</b>`
@@ -214,7 +228,7 @@ async function huntMessage(date, label, rank, prev) {
     at('lcl') != null && `☁️ Base de nube (${at('lcl')} m): ${words.lcl(at('lcl'))}`,
   ].filter(Boolean);
   const side = rumbo(o.mdir - 90);
-  const others = opts.slice(1).map((x, k) => `${['2️⃣', '3️⃣', '4️⃣'][k]} Zona ${esc(x.z.name)} · <b>${x.z.v}</b> · pico ${clock(x.peakH * 60)} h\n   👁 ${stopLine(x)}\n   ${x.dist} km · ${timeLine(x)}${x.hit ? ' ⚠️' : ''} · <a href="${ruta(x.vp)}">ruta</a>`);
+  const others = opts.slice(1).map((x, k) => `${['2️⃣', '3️⃣', '4️⃣'][k]} Zona ${esc(x.z.name)} · <b>${x.z.v}</b> · pico ${clock(x.peakH * 60)} h${x.noConviene?.length ? ` · ⚠️ no conviene: ${x.noConviene[0]}` : ''}\n   👁 ${stopLine(x)}\n   ${x.dist} km · ${timeLine(x)}${x.hit ? ' ⚠️' : ''} · <a href="${ruta(x.vp)}">ruta</a>`);
   return [
     score >= CLARO ? `🌪️ <b>DÍA DE CAZA · ${label}</b> <i>${dayName(date)}</i>`
       : score >= MIN ? `🟠 <b>DÍA POSIBLE · ${label}</b> <i>${dayName(date)}</i>\n<i>Potencial moderado: no es un día claro. Vale si estás cerca o con ganas de probar. Si sube a ${CLARO}+, te aviso de nuevo.</i>`
@@ -224,6 +238,7 @@ async function huntMessage(date, label, rank, prev) {
     `🎯 <b>Zona ${esc(o.z.name)}</b> · pico a las <b>${clock(o.peakH * 60)} h</b>${ventana(o.z) ? ` · ventana ${ventana(o.z)}` : ''}`,
     modelsLine(o.z),
     biasLine(),
+    ...(o.noConviene?.length ? [`⚠️ <b>No conviene ir</b>: ${o.noConviene.join('; ')}.`] : []),
     `👁 Parar en: ${stopLine(o)}`,
     `${stopWhy(o)} · <a href="${ruta(o.vp)}">Ruta a la parada</a>`,
     `🚗 ${o.dist} km en línea recta, ~${dur(o.drive)} desde Leones`,
@@ -327,6 +342,7 @@ async function buildBrief() {
         // Sin la corrección aprendida: el historial mide el error contra esto.
         hora_pico_modelo: clock((o.peakH - (o.z.dt ?? 0)) * 60), centro_modelo: { lat: +o.z.ctr_modelo.lat.toFixed(2), lon: +o.z.ctr_modelo.lon.toFixed(2) },
         parada: { nombre: o.stop?.label ?? null, tipo: o.stop?.kind ?? null, cerca_de: o.place?.place ?? null, ruta: o.place?.road ?? null, lat: +o.vp.lat.toFixed(3), lon: +o.vp.lon.toFixed(3) },
+        conviene: !(o.noConviene?.length), por_que_no_conviene: o.noConviene ?? [],
         km_desde_leones: o.dist, horas_de_viaje: +o.drive.toFixed(1), salir: clock(o.leave * 60), es_tarde: o.late, llega_a_tiempo: o.reachable,
         camino_cruza_tormentas: o.hit ? clock(o.hit.h * 60) : false,
         tormentas_van_hacia: o.mspd != null ? rumbo(o.mdir) : null, velocidad_kmh: o.mspd,
@@ -381,6 +397,8 @@ Reglas obligatorias:
 - Seguridad: nunca recomiendes acercarse a menos de 15 km de una tormenta, ponerse delante de su camino, caminos de tierra,
   ni salir o seguir de noche (después de la puesta del sol). Interceptar de costado (lado norte si van al este), nunca perseguir por detrás.
 - Si ninguna opción llega a tiempo o el potencial es < 45, decí que hoy no conviene.
+- NUNCA recomiendes una opción con "conviene": false (pico de noche, viaje largo para un día moderado o modelos que
+  no coinciden): si todas son así, decí "Hoy no salgas" y por qué.
 - No prometas tornados: hablá de "chances".
 - "nucleos_satelite" son tormentas detectadas AHORA por satélite (topes fríos). Si "vos" existe, es la ubicación del usuario:
   decí a qué distancia y rumbo desde él está la mejor tormenta y si conviene quedarse o moverse (rumbo y km aproximados) para
@@ -633,7 +651,7 @@ if (!REPLAY && data && state.plan?.date === today && !state.plan.cerrado && !qui
   const curV = mine?.v ?? 0;
   const nowH = nowMin / 60;
   const pre = huntOptions(zs, data.towns, data.times, today, origin, (bp) => state.stopsR?.[plainKey(bp)] || null, nowH);
-  const best = pre.find((o) => o.reachable && o.z.v >= MIN);
+  const best = pre.find((o) => o.reachable && o.z.v >= MIN && !porQueNo(o, today).length);
   const bajo = curV < MIN || curV <= plan.v - 10;
   const mejor = best && plan.ctr && (!mine || km(best.z.ctr, plan.ctr) > 90) && best.z.v >= curV + 10;
   if (plan.semilla || bajo || mejor) {
