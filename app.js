@@ -929,8 +929,9 @@ function renderIntercept() {
   }
   const st = interStops.get(k) || null, p = st ?? x.base, pasa = rumbo(x.mdir + 90);
   const tip = `<b>🎯 Para ver la tormenta ${x.aislada ? 'aislada' : '(hay otras cerca)'}</b> que está a ${x.d} km al ${x.desde} tuyo y va al ${rumbo(x.mdir)} a ~${x.c.kmh} km/h<br>`
-    + (x.quedate ? `<b>Quedate donde estás</b>: pasa a ~15 km al ${pasa} en ~${x.pasa_min} min`
-      : `Parate en ${st ? `🌾 <b>${esc(st.label)}</b>${st.cruce ? ' (cruce, dos salidas)' : ''}` : 'este punto (buscá ruta asfaltada cerca)'}<br>Llegás en ~${x.llegas_min} min · ella pasa a ~15 km al <b>${pasa}</b> en ~${x.pasa_min} min`)
+    + (x.quedate ? `<b>Quedate donde estás</b>: pasa a ~${x.lado} km al ${pasa} en ~${x.pasa_min} min`
+      : `Parate en ${st ? `🌾 <b>${esc(st.label)}</b>${st.cruce ? ' (cruce, dos salidas)' : ''}` : 'este punto (buscá ruta asfaltada cerca)'}<br>Llegás en ~${x.llegas_min} min · ella pasa a ~${x.lado} km al <b>${pasa}</b> en ~${x.pasa_min} min`)
+    + `<br>🧊 El granizo cae del lado ${pasa} de la tormenta: vos quedás del otro lado${x.granizo_grande ? `, a ${x.lado} km porque tiene señales de <b>granizo grande</b>` : ''}.`
     + `<br>Si se te acerca, escapá hacia el <b>${rumbo(x.away)}</b>. Nunca te cruces por delante.`;
   L.polyline([[S.origin.lat, S.origin.lon], [p.lat, p.lon]], { pane: 'smn', color: '#3ddc97', weight: 2, dashArray: '4 6', interactive: false }).addTo(interLayer);
   L.marker([p.lat, p.lon], { pane: 'smn', icon: L.divIcon({ className: 'intermark', html: '<span>🎯</span>', iconSize: null }) })
