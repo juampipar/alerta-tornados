@@ -212,6 +212,27 @@ const outside = (z, b) => (z ? Math.max(0, Math.round(km(b.t, z.ctr) - z.r)) : 0
 // Puntaje del día = el de la zona de caza principal (o el mejor pueblo si no hay zona).
 const dayScore = (date, rank) => zonesFor(date)[0]?.v ?? rank[0]?.score ?? 0;
 
+// 📋 Plan de caza con pasos y horarios, como hacen los cazadores: base rural, esperar, decidir, moverse, volver.
+function planDe(o, opts, date) {
+  const ocaso = sunsetHour(HOME.lat, HOME.lon, date);
+  const inicio = o.z.ventana ? o.z.ventana[0] : o.peakH - 1;
+  const decision = Math.min(ocaso - 1, Math.max(inicio + 1.5, o.arriveAt + 0.5));
+  // Plan B: otra zona que convenga, a menos de 1 h 30 de la base, con pico después de la hora de decidir.
+  const b = opts.find((x) => x !== o && !x.noConviene?.length && x.z.v >= MIN && x.peakH >= decision && driveHours(km(o.vp, x.vp)) <= 1.5);
+  const planB = b ? { zona: b.z.name, v: b.z.v, vp: b.vp, label: b.stop?.label ?? null, km: Math.round(km(o.vp, b.vp)), pico: b.peakH } : null;
+  return { inicio, decision, ocaso, planB, from: rumbo(o.mdir + 180) };
+}
+function planLines(o, p) {
+  return [
+    '📋 <b>TU PLAN</b>',
+    `1️⃣ <b>${o.late ? 'Ahora' : clock(o.leave * 60)}</b> · Salí de Leones a la base: ${stopLine(o)} (~${dur(o.drive)})`,
+    `2️⃣ <b>${clock(o.arriveAt * 60)}–${clock(p.decision * 60)}</b> · Esperá en la base mirando el cielo hacia el <b>${p.from}</b>. No hace falta mirar el celular: si nace algo, te aviso.`,
+    `3️⃣ <b>Si nace una tormenta</b>, te llega 🎯 con el punto para verla, el mapa y la ruta. Andá ahí: de costado, nunca adelante.`,
+    `4️⃣ <b>${clock(p.decision * 60)}</b> · Decisión: si no nació nada a menos de 60 km, ${p.planB ? `andá al plan B: Zona ${esc(p.planB.zona)} (${p.planB.v}), a ${p.planB.km} km de la base` : '<b>volvé</b>'}. Te aviso a esa hora.`,
+    `5️⃣ <b>${clock(p.ocaso * 60)}</b> · Se pone el sol: volvé aunque siga.`,
+    '<i>Al salir mandá /caza y compartí la ubicación en tiempo real: así todo se calcula desde donde estés.</i>',
+  ];
+}
 async function huntMessage(date, label, rank, prev) {
   const opts = await optionsFor(date), o = opts[0];
   if (!o) {
@@ -238,7 +259,7 @@ async function huntMessage(date, label, rank, prev) {
     `🎯 <b>Zona ${esc(o.z.name)}</b> · pico a las <b>${clock(o.peakH * 60)} h</b>${ventana(o.z) ? ` · ventana ${ventana(o.z)}` : ''}`,
     modelsLine(o.z),
     biasLine(),
-    ...(o.noConviene?.length ? [`⚠️ <b>No conviene ir</b>: ${o.noConviene.join('; ')}.`] : []),
+    ...(o.noConviene?.length ? [`⚠️ <b>No conviene ir</b>: ${o.noConviene.join('; ')}.`] : ['', ...planLines(o, planDe(o, opts, date)), '']),
     `👁 Parar en: ${stopLine(o)}`,
     `${stopWhy(o)} · <a href="${ruta(o.vp)}">Ruta a la parada</a>`,
     `🚗 ${o.dist} km en línea recta, ~${dur(o.drive)} desde Leones`,
@@ -272,7 +293,8 @@ if (data) {
     // Plan de hoy (para avisar si después cambia): la zona y la parada que se mandaron.
     if (fire && off === 0) {
       const o = (await optionsFor(date))[0];
-      if (o) { state.plan = { date, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, t: NOW }; messages.push(pin2(o.vp, `Parada · Zona ${o.z.name}`, o.stop?.label ?? 'punto aproximado')); }
+      if (o) { const pl = planDe(o, await optionsFor(date), date);
+        state.plan = { date, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, base: { lat: o.vp.lat, lon: o.vp.lon }, inicio: pl.inicio, decision: pl.decision, ocaso: pl.ocaso, planB: pl.planB, t: NOW }; messages.push(pin2(o.vp, `Parada · Zona ${o.z.name}`, o.stop?.label ?? 'punto aproximado')); }
     }
   }
 }
@@ -368,6 +390,7 @@ async function buildBrief() {
         }) };
       } catch { return null; }
     })(),
+    plan: state.plan?.date === today && !state.plan.cerrado ? { zona: state.plan.zona, base: state.plan.stop, hora_de_decidir: state.plan.decision != null ? clock(state.plan.decision * 60) : null, puesta_de_sol: state.plan.ocaso != null ? clock(state.plan.ocaso * 60) : null, plan_b: state.plan.planB?.zona ?? null } : null,
     escape: ESCAPE,
     intercepcion: INTER ? {
       tormenta: { lat: +INTER.c.lat.toFixed(2), lon: +INTER.c.lon.toFixed(2), aislada: INTER.aislada, fuerza: INTER.c.fuerza, va_hacia: rumbo(INTER.mdir), kmh: INTER.c.kmh, km_desde: INTER.d, rumbo_desde: INTER.desde },
@@ -388,6 +411,9 @@ Reglas obligatorias:
 - Usá solo los datos del JSON: nombrá la parada, la hora de salida y la ruta si están. No inventes lugares, rutas ni datos.
 - Las paradas son RURALES (sobre ruta asfaltada, afuera de los pueblos, ojalá en un cruce): nunca mandes a esperar adentro de una ciudad,
   porque ahí no se ve nada y cuando llega la tormenta no se puede salir. A los pueblos solo se va a cargar nafta antes.
+- Si existe "plan", el usuario está siguiendo ese plan: no lo contradigas. Decile en qué paso está (ir a la base, esperar,
+  interceptar si nació algo, decidir a la "hora_de_decidir", volver antes de la "puesta_de_sol"). Solo cambialo si hay una
+  tormenta o un aviso nuevo que lo justifique, y decí por qué.
 - Si existe "escape", hay una tormenta encima o muy cerca: decí EXACTAMENTE hacia dónde moverse (rumbo, km y el punto si tiene
   nombre), con esas palabras. Nunca digas solo "movete" sin rumbo ni distancia.
 - Si existe "intercepcion", ese es el punto CALCULADO para ver la mejor tormenta (al costado de su camino, adelante, llegando antes
@@ -654,7 +680,16 @@ if (!REPLAY && data && state.plan?.date === today && !state.plan.cerrado && !qui
   const best = pre.find((o) => o.reachable && o.z.v >= MIN && !porQueNo(o, today).length);
   const bajo = curV < MIN || curV <= plan.v - 10;
   const mejor = best && plan.ctr && (!mine || km(best.z.ctr, plan.ctr) > 90) && best.z.v >= curV + 10;
-  if (plan.semilla || bajo || mejor) {
+  // Ya en camino (desde 1 h antes de la ventana): no se cambia el plan por el pronóstico; manda el satélite.
+  const enCamino = plan.inicio != null && nowMin / 60 >= plan.inicio - 1;
+  if (enCamino && (bajo || mejor) && !plan.avisoEnCamino && !(mejor && best.z.v >= curV + 15)) {
+    messages.push([
+      `📋 <b>El pronóstico ${bajo ? `bajó (de ${plan.v} a ${curV || 'menos de 45'})` : 'cambió'}, pero seguí el plan</b>`,
+      `Ya estás en camino o en la base: desde ahora lo que manda es <b>el satélite</b>, no el pronóstico. Muchas tormentas nacen igual.`,
+      `Esperá en la base hasta las <b>${clock(plan.decision * 60)}</b>. Si nace algo, te mando el 🎯. Si a esa hora no nació nada cerca, ${plan.planB ? `andá al plan B (Zona ${esc(plan.planB.zona)})` : 'volvé tranquilo'}.`,
+    ].join('\n'));
+    plan.avisoEnCamino = true; state.planMsg = NOW;
+  } else if ((!enCamino || (mejor && best.z.v >= curV + 15)) && (plan.semilla || bajo || mejor)) {
     let o = best;
     if (o) { // parada rural para la opción nueva (si falta)
       state.stopsR ??= {};
@@ -675,6 +710,7 @@ if (!REPLAY && data && state.plan?.date === today && !state.plan.cerrado && !qui
         `   ${stopLine(o)} · a ${o.dist} km ${desde} (~${dur(o.drive)})`,
         `   ${timeLine(o)}${o.hit ? ` · ⚠️ entrá por el ${rumbo(o.mdir - 90)}, sin cruzar por delante` : ''}`,
         `   <a href="${ruta(o.vp)}">🗺️ Ruta</a>`,
+        '', ...planLines(o, planDe(o, pre, today)).slice(1, -1).map((x) => x.replace(/^1️⃣ (.*) · Salí de Leones a la base/, '1️⃣ $1 · Andá a la base')),
       ] : [
         `👉 <b>No queda ninguna zona buena a la que llegues hoy.</b> Volvé tranquilo o quedate cerca de una ruta asfaltada.`,
         state.chase?.on ? '   Si nace algo cerca igual, el modo caza te avisa adónde ir.' : '   Si nace algo cerca igual, el satélite te avisa.',
@@ -683,7 +719,38 @@ if (!REPLAY && data && state.plan?.date === today && !state.plan.cerrado && !qui
     ].join('\n'));
     if (o) messages.push(pin2(o.vp, `Parada · Zona ${o.z.name}`, o.stop?.label ?? 'punto aproximado'));
     state.planMsg = NOW;
-    state.plan = o ? { date: today, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, t: NOW } : { ...plan, cerrado: true };
+    if (o) { const pl = planDe(o, pre, today); state.plan = { date: today, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, base: { lat: o.vp.lat, lon: o.vp.lon }, inicio: pl.inicio, decision: pl.decision, ocaso: pl.ocaso, planB: pl.planB, t: NOW }; }
+    else state.plan = { ...plan, cerrado: true };
+  }
+}
+
+/* ---------- 📋 Seguimiento del plan: hora de decidir y vuelta ---------- */
+if (!REPLAY && state.plan?.date === today && !state.plan.cerrado && state.plan.decision != null) {
+  const plan = state.plan;
+  const loc = state.chase?.on && state.chase.loc && NOW - state.chase.loc.t < 90 * 60e3 ? state.chase.loc : null;
+  const donde = loc ?? plan.base;
+  if (!plan.avisoDecision && nowMin / 60 >= plan.decision) {
+    let nc = null;
+    try { nc = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8')); } catch { /* sin satélite */ }
+    const fresco = nc?.hora_utc && NOW - Date.parse(nc.hora_utc) < 60 * 60e3;
+    const cerca = (fresco ? nc.celulas : []).map((c0) => { const e = coreAt(c0, nc.hora_utc, NOW); return { ...c0, lat: e.lat, lon: e.lon }; })
+      .filter((c) => km(donde, c) <= 60 && c.tendencia !== 'debilitándose' && (c.fuerza !== 'moderada' || c.tendencia === 'creciendo' || c.tendencia === 'nueva' || c.rayos_10min >= 10));
+    messages.push(cerca.length ? [
+      `📋 <b>Paso 4 · hora de decidir (${clock(plan.decision * 60)})</b>`,
+      `Hay ${cerca.length === 1 ? 'una tormenta' : `${cerca.length} tormentas`} a menos de 60 km${loc ? ' tuyo' : ' de la base'}: <b>seguí</b>. Si alguna se pone buena, te llega el 🎯 con adónde ir.`,
+      `Volvé a más tardar a las <b>${clock(plan.ocaso * 60)}</b> (se pone el sol).`,
+    ].join('\n') : [
+      `📋 <b>Paso 4 · hora de decidir (${clock(plan.decision * 60)})</b>`,
+      `No nació nada a menos de 60 km${loc ? ' tuyo' : ' de la base'}.`,
+      plan.planB ? `👉 Si tenés ganas, andá al <b>plan B: Zona ${esc(plan.planB.zona)}</b> (${plan.planB.v}), a ${plan.planB.km} km de la base${plan.planB.label ? `: 🌾 ${esc(plan.planB.label)}` : ''}. <a href="${ruta(plan.planB.vp)}">🗺️ Ruta</a>`
+        : '👉 <b>Volvé tranquilo.</b> Hoy no se armó. Pasa seguido: los cazadores vuelven sin nada la mayoría de los días.',
+    ].join('\n'));
+    if (!cerca.length && plan.planB) messages.push(pin2(plan.planB.vp, `Plan B · Zona ${plan.planB.zona}`, plan.planB.label ?? ''));
+    plan.avisoDecision = true;
+  }
+  if (!plan.avisoOcaso && loc && nowMin / 60 >= plan.ocaso - 0.5) {
+    messages.push(`🌅 <b>Paso 5 · en 30 min se pone el sol</b> (${clock(plan.ocaso * 60)}). Emprendé la vuelta: de noche no se ve la tormenta y es peligroso. Mandá /fin cuando llegues.`);
+    plan.avisoOcaso = true;
   }
 }
 
