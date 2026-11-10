@@ -2,10 +2,14 @@ name: Publicar panel
 on:
   push: { branches: [main] }
   schedule:
-    - cron: '17 * * * *' # cada hora: lluvia SMN + avisos (el pronóstico se recalcula cada 2 h)
-    - cron: '7,27,37,47,57 * * * *' # cada 10 min: solo avisos SMN (los de corto plazo duran 1–2 h)
+    - cron: '17 * * * *' # respaldo: GitHub lo corre cuando puede (a veces cada varias horas)
+  # El vigía (vigia.yml) lo lanza cada 30 min con auto=true y es el que manda los avisos de Telegram.
   workflow_dispatch:
     inputs:
+      auto:
+        description: 'Lanzado por el vigía (reusa el pronóstico si tiene menos de 2 h)'
+        type: boolean
+        default: false
       prueba:
         description: 'Mandar un resumen por Telegram aunque no haya alerta'
         type: boolean
@@ -27,8 +31,8 @@ jobs:
       - run: mkdir _site && cp -r index.html app.js style.css manifest.webmanifest icon.svg lib _site/
       - run: node scripts/build-data.mjs _site
         env:
-          REUSE_FORECAST: ${{ github.event_name == 'schedule' && 'https://juampipar.github.io/alerta-tornados/data/forecast.json' || '' }}
-          REUSE_MODELS: ${{ github.event_name == 'schedule' && 'https://juampipar.github.io/alerta-tornados/data/modelos.json' || '' }}
+          REUSE_FORECAST: ${{ (github.event_name == 'schedule' || inputs.auto) && 'https://juampipar.github.io/alerta-tornados/data/forecast.json' || '' }}
+          REUSE_MODELS: ${{ (github.event_name == 'schedule' || inputs.auto) && 'https://juampipar.github.io/alerta-tornados/data/modelos.json' || '' }}
       # Lluvia pronosticada del modelo WRF del SMN (4 km). Solo se recalcula cuando sale una corrida nueva.
       - uses: actions/setup-python@v5
         with: { python-version: '3.12', cache: pip, cache-dependency-path: scripts/requirements.txt }
@@ -42,13 +46,11 @@ jobs:
           python scripts/nowcast.py _site || echo 'núcleos del satélite: falló'
         env:
           PUBLISHED_WRF: https://juampipar.github.io/alerta-tornados/data/wrf/
-          REUSE_ONLY: ${{ github.event.schedule == '7,27,37,47,57 * * * *' && '1' || '' }}
           NOWCAST_AT: ${{ inputs.repetir }}
           REPLAY_AT: ${{ inputs.repetir }}
-      # Alertas Telegram: el estado (qué ya se envió) se guarda en la caché de Actions entre corridas.
-      - uses: actions/cache/restore@v4
-        with: { path: .alert-state, key: 'alert-state-${{ github.run_id }}', restore-keys: alert-state- }
-      - name: Alerta Telegram
+      # Resumen para la IA (data/brief.json). Los avisos de Telegram los manda el vigía (vigia.yml); acá solo se
+      # envía si es una prueba o una repetición pedida a mano. El estado de acá es descartable.
+      - name: Resumen (y prueba de Telegram)
         continue-on-error: true # si falla, el panel se publica igual
         run: node scripts/alert.mjs _site
         env:
@@ -58,7 +60,8 @@ jobs:
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           MIN_SCORE: ${{ vars.MIN_SCORE || '60' }}
           RADIUS_KM: ${{ vars.RADIUS_KM || '200' }}
-          ALERT_STATE: .alert-state/state.json
+          ALERT_STATE: .estado-panel/state.json
+          DRY_RUN: ${{ (inputs.prueba || inputs.repetir) && '' || '1' }}
           TEST: ${{ inputs.prueba && '1' || '' }}
           REPLAY_AT: ${{ inputs.repetir }}
       # Historial: qué se pronosticó y qué pasó (avisos SMN, satélite, tus reportes). Se guarda en la rama "datos".
@@ -77,10 +80,6 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - uses: actions/cache/save@v4
-        if: ${{ always() && !inputs.repetir }}
-        continue-on-error: true
-        with: { path: .alert-state, key: 'alert-state-${{ github.run_id }}' }
       - uses: actions/upload-pages-artifact@v3
         if: ${{ !inputs.repetir }} # una repetición no publica el panel (tendría datos viejos)
         with: { path: _site }
