@@ -234,6 +234,11 @@ if (data) {
     const fire = sc >= MIN && sc >= prev + 10 && !quiet;
     if (fire) state.days[date] = sc;
     if (fire || (test && (off === 0 || sc >= MIN))) messages.push(await huntMessage(date, label, rank, fire ? prev : -1));
+    // Plan de hoy (para avisar si después cambia): la zona y la parada que se mandaron.
+    if (fire && off === 0) {
+      const o = (await optionsFor(date))[0];
+      if (o) state.plan = { date, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, t: NOW };
+    }
   }
 }
 
@@ -580,6 +585,56 @@ if (state.chase.on && state.chase.loc) {
   }
 }
 for (const m of chaseOut) messages.push(m);
+
+/* ---------- 🔄 Cambió el plan: si la zona que te mandamos bajó (o apareció una mejor), qué hacer AHORA ---------- */
+// Si hoy ya salió el aviso del día pero no quedó guardado el plan (aviso de antes de esta versión), se manda una
+// actualización con la mejor opción de ahora.
+if (!state.plan || state.plan.date !== today) { if ((state.days?.[today] ?? -1) >= MIN) state.plan = { date: today, zona: null, ctr: null, v: state.days[today], t: NOW, semilla: true }; }
+// Usa tu ubicación del modo caza si está fresca (si no, Leones). Se fija cada vez que el panel recalcula el pronóstico.
+if (!REPLAY && data && state.plan?.date === today && !state.plan.cerrado && !quiet && nowMin < 21 * 60
+  && NOW - (state.planMsg ?? 0) > 40 * 60e3) {
+  const loc = state.chase?.on && state.chase.loc && NOW - state.chase.loc.t < 90 * 60e3 ? state.chase.loc : null;
+  const origin = loc ? { lat: loc.lat, lon: loc.lon } : HOME;
+  const zs = zonesFor(today, 4);
+  const plan = state.plan;
+  const mine = plan.ctr ? zs.find((z) => km(z.ctr, plan.ctr) <= 90) : null;
+  const curV = mine?.v ?? 0;
+  const nowH = nowMin / 60;
+  const pre = huntOptions(zs, data.towns, data.times, today, origin, (bp) => state.stopsR?.[plainKey(bp)] || null, nowH);
+  const best = pre.find((o) => o.reachable && o.z.v >= MIN);
+  const bajo = curV < MIN || curV <= plan.v - 10;
+  const mejor = best && plan.ctr && (!mine || km(best.z.ctr, plan.ctr) > 90) && best.z.v >= curV + 10;
+  if (plan.semilla || bajo || mejor) {
+    let o = best;
+    if (o) { // parada rural para la opción nueva (si falta)
+      state.stopsR ??= {};
+      const k = plainKey(o.base);
+      if (!(k in state.stopsR)) state.stopsR[k] = (await ruralStop(o.base, (o.mdir - 90 + 360) % 360)) || false;
+      o = huntOptions(zs, data.towns, data.times, today, origin, (bp) => state.stopsR[plainKey(bp)] || null, nowH).find((x) => km(x.z.ctr, o.z.ctr) < 5) ?? o;
+    }
+    const desde = loc ? 'de vos' : 'de Leones';
+    messages.push([
+      `🔄 <b>${plan.semilla ? 'ACTUALIZACIÓN DEL PLAN' : 'CAMBIÓ EL PRONÓSTICO'}</b> <i>(${clock(nowMin)} h)</i>`,
+      plan.semilla ? `A la mañana el mejor potencial era ${plan.v}. ${best ? `Ahora la mejor zona a la que llegás tiene <b>${best.z.v}</b>.` : `Ahora <b>ninguna zona a la que llegues llega a ${MIN}</b>.`}`
+      : bajo ? (mine ? `La zona <b>${esc(plan.zona)}</b> bajó de ${plan.v} a <b>${curV}</b>${curV < MIN ? ': <b>ya no vale la pena ir</b>' : ''}.`
+        : `La zona <b>${esc(plan.zona)}</b> ya no aparece (bajó de ${plan.v} a menos de 45): <b>no vale la pena ir</b>.`)
+        : `Apareció una zona mejor que <b>${esc(plan.zona)}</b> (${curV}).`,
+      '',
+      ...(o ? [
+        `👉 <b>Mejor opción ahora:</b> Zona ${esc(o.z.name)} · <b>${o.z.v}</b> · pico ${clock(o.peakH * 60)} h`,
+        `   ${stopLine(o)} · a ${o.dist} km ${desde} (~${dur(o.drive)})`,
+        `   ${timeLine(o)}${o.hit ? ` · ⚠️ entrá por el ${rumbo(o.mdir - 90)}, sin cruzar por delante` : ''}`,
+        `   <a href="${ruta(o.vp)}">🗺️ Ruta</a>`,
+      ] : [
+        `👉 <b>No queda ninguna zona buena a la que llegues hoy.</b> Volvé tranquilo o quedate cerca de una ruta asfaltada.`,
+        state.chase?.on ? '   Si nace algo cerca igual, el modo caza te avisa adónde ir.' : '   Si nace algo cerca igual, el satélite te avisa.',
+      ]),
+      `<a href="${PANEL}">📡 Mapa</a>`,
+    ].join('\n'));
+    state.planMsg = NOW;
+    state.plan = o ? { date: today, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, t: NOW } : { ...plan, cerrado: true };
+  }
+}
 
 /* ---------- 🛰️ Aviso del satélite en días de caza (sin modo caza) ---------- */
 // Tormenta nueva o creciendo, fuerte o con topes que sobresalen, o con un salto de rayos (GLM), en cualquier parte del Pasillo.
