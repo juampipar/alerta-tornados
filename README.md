@@ -111,7 +111,7 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
-- 🌪️ **Día de caza**: hoy o mañana alguna zona llega a **60** o más. Trae la mejor zona, la hora pico, a qué hora salir desde Leones, hacia dónde van las tormentas, los ingredientes explicados (energía, cizalladura, giro cerca del suelo, base de nube), otras zonas y la ruta en Google Maps. Uno por día, y otro si sube 10 puntos. Entre las 23 y las 7 h no se manda.
+- 🌪️ **Día de caza**: hoy o mañana alguna zona llega a **60** o más (de **50 a 59** llega igual, como 🟠 **día posible**: potencial moderado). Trae la mejor zona, la hora pico, a qué hora salir desde Leones, hacia dónde van las tormentas, los ingredientes explicados (energía, cizalladura, giro cerca del suelo, base de nube), otras zonas y la ruta en Google Maps. Uno por día, y otro si sube 10 puntos. Entre las 23 y las 7 h no se manda.
 - 🚨 **¡Ya se están formando!**: solo en un día de caza, cuando el SMN emite un aviso a corto plazo cerca de Leones (200 km) o de las zonas marcadas (80 km). Es la confirmación de que lo que marcaba el pronóstico está pasando. Los avisos del SMN de días comunes **no** se mandan (son muchos y casi nunca son de tornado).
 - ⛈️ **Tormenta fuerte hacia Leones** (todos los días, no solo de caza; cada 10 min): una tormenta fuerte viene hacia Leones en las próximas 2 h, o un aviso a corto plazo del SMN cubre Leones. Lógica en `lib/tormenta.mjs`, la misma que la tarjeta ⛈️ del panel (que usa tu ubicación).
   - **Qué tan seguro es que llegue**: 🔴 muy probable / 🟠 probable / 🟡 posible, pero no es seguro. Suma si viene derecho (con ±20° de error de dirección), si falta poco, si el satélite confirma el movimiento y si crece; resta si pasa de costado, si falta más de 1 h o si se debilita. Un aviso del SMN solo (sin tormenta en el satélite) es 🟠, porque cubre una zona grande.
@@ -128,7 +128,7 @@ Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
 **🤖 Recomendación con IA (opcional, gratis):** cuando llega un "Día de caza" o un 🚨, Gemini lee `data/brief.json` (un resumen de todo el panel pensado para IA) y manda un mensaje corto "Qué haría yo", con reglas de seguridad fijas. Para activarla: en https://aistudio.google.com tocá **Get API key → Create API key**, copiala y cargala como secreto `GEMINI_API_KEY` (Settings → Secrets and variables → Actions). La capa gratuita alcanza; el modelo se puede cambiar con la variable `GEMINI_MODEL` (por defecto `gemini-flash-latest`). Sin la clave todo funciona igual, sin ese mensaje.
 
-Opcional, en la pestaña **Variables** de esa misma pantalla: `MIN_SCORE` (umbral, 60 por defecto) y `RADIUS_KM` (radio para avisos SMN, 200 por defecto). Para un grupo, agregá el bot al grupo y usá el id del grupo (empieza con `-`).
+Opcional, en la pestaña **Variables** de esa misma pantalla: `MIN_SCORE` (umbral, 50 por defecto: de 50 a 59 llega como 🟠 día posible, desde 60 como 🌪️ día de caza) y `RADIUS_KM` (radio para avisos SMN, 200 por defecto). Para un grupo, agregá el bot al grupo y usá el id del grupo (empieza con `-`).
 
 Local: `DRY_RUN=1 node scripts/alert.mjs .` muestra lo que mandaría sin enviarlo.
 
