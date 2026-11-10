@@ -533,6 +533,27 @@ async function escapeLines(c, me) {
   ];
 }
 
+// 👀 Guía visual y 📡 cómo leer el radar del SMN, con los rumbos de ESTA tormenta (hemisferio sur: la supercelda
+// gira del lado izquierdo-atrás de su camino; el granizo y la lluvia fuerte caen adelante a la derecha).
+const RADAR_SMN = 'https://www.smn.gob.ar/radar';
+function guiaLines(mdir) {
+  const atras = rumbo(mdir + 180), gancho = rumbo(mdir - 135), granizo = rumbo(mdir + 45);
+  return [
+    '👀 <b>QUÉ MIRAR EN EL CIELO</b>',
+    `1. La <b>base</b> de la tormenta del lado <b>${gancho}</b> (atrás, a la izquierda de su camino): ahí sube el aire y es donde se forma el tornado.`,
+    '2. <b>Nube pared</b>: un pedazo de la base que baja, oscuro, como un escalón. Si la ves <b>girar</b> o moverse de costado, hay rotación.',
+    '3. <b>Tornado</b>: un embudo que baja de la nube pared, o polvo y restos girando en el suelo debajo de ella, aunque no se vea el embudo entero.',
+    `4. La <b>cortina blanca o gris</b> del lado <b>${granizo}</b> es lluvia fuerte y granizo: siempre lejos, nunca te metas.`,
+    '5. Si el viento sopla cálido <b>hacia</b> la tormenta, estás bien ubicado. Si de golpe sopla frío <b>desde</b> la tormenta, o llueve gordo, alejate.',
+    '',
+    `📡 <b>CÓMO LEER EL <a href="${RADAR_SMN}">RADAR DEL SMN</a></b> (elegí el radar más cercano: Córdoba, Pergamino o Paraná)`,
+    '• Verde = lluvia · amarillo/naranja = fuerte · <b>rojo/violeta/blanco = muy fuerte o granizo</b>.',
+    `• <b>Gancho</b>: una "cola" que se curva del lado <b>${gancho}</b> de la tormenta, como una coma o un 6. Es la firma de la supercelda con rotación: ahí puede estar el tornado.`,
+    '• Tocá ▶ para ver la animación: si el núcleo se "dobla" y crece rápido, se está organizando.',
+    `• Ella viene del <b>${atras}</b>. Vos parate de costado, del lado contrario a la cortina de granizo, a 15–20 km.`,
+  ];
+}
+
 /* ---------- 🎯 Modo caza: ubicación en vivo por Telegram + núcleos del satélite ---------- */
 // El usuario comparte su ubicación en tiempo real con el bot (o manda /caza) y el sistema le avisa en cada corrida
 // si nace, crece o se acerca una tormenta, con la recomendación de la IA. /fin lo apaga.
@@ -551,10 +572,11 @@ async function readTelegram() {
       if (m.location) {
         const was = state.chase.on;
         state.chase.loc = { lat: m.location.latitude, lon: m.location.longitude, t: (m.edit_date || m.date) * 1000 };
-        if (!was) { state.chase.on = true; state.chase.since = Date.now(); state.chase.welcome = true; }
+        if (!was) { state.chase.on = true; state.chase.since = Date.now(); state.chase.welcome = true; state.chase.guia = false; }
       }
       const txt = (m.text || '').trim().toLowerCase();
-      if (/^\/?caza\b/.test(txt)) { state.chase.on = true; state.chase.since = Date.now(); state.chase.welcome = true; }
+      if (/^\/?caza\b/.test(txt)) { state.chase.on = true; state.chase.since = Date.now(); state.chase.welcome = true; state.chase.guia = false; }
+      if (/^\/?guia\b|^\/?guía\b/.test(txt)) state.chase.pideGuia = true;
       if (/^\/?(fin|stop|basta)\b/.test(txt)) { state.chase.on = false; chaseOut.push('🏁 <b>Modo caza apagado.</b> Buen regreso.'); }
       if (/^\/?estado\b/.test(txt)) state.chase.force = true;
     }
@@ -576,11 +598,16 @@ if (state.chase.on) {
   } else if (state.chase.welcome) {
     state.chase.welcome = false;
     chaseOut.push(loc ? '🎯 <b>Modo caza activado.</b> Tengo tu ubicación: te aviso si nace, crece o se acerca una tormenta. /fin para apagarlo.'
-      : '🎯 <b>Modo caza activado.</b> Compartime tu <b>ubicación en tiempo real</b> (📎 → Ubicación → Compartir en tiempo real) para decirte adónde moverte. /fin para apagarlo.');
+      : '🎯 <b>Modo caza activado.</b> Compartime tu <b>ubicación en tiempo real</b> (📎 → Ubicación → Compartir en tiempo real) para decirte adónde moverte. /guia: qué mirar en el cielo y en el radar. /fin para apagarlo.');
   }
 }
 
 let chaseEvent = null;
+// /guia sin tormenta cerca: rumbo típico del Pasillo (van hacia el este).
+if (state.chase?.pideGuia && !REPLAY) {
+  messages.push(guiaLines(90).join('\n'));
+  state.chase.pideGuia = false;
+}
 if (state.chase.on && state.chase.loc) {
   const me = state.chase.loc;
   let nc = null;
@@ -644,7 +671,7 @@ if (state.chase.on && state.chase.loc) {
       ...(chaseEvent.tipo === 'cerca' ? await escapeLines(chaseEvent.cores[0], me)
         : (await intercept(me, nc)) ? ['', ...interceptLines(INTER)]
         : chaseEvent.tipo === 'estado' ? ['', 'No hay ninguna tormenta fuerte a la que llegues a tiempo: <b>quedate donde estás</b> y esperá el próximo aviso.'] : []),
-      `<a href="${PANEL}">📡 Radar y mapa</a>`,
+      `<a href="${RADAR_SMN}">📡 Radar SMN</a> · <a href="${PANEL}">🗺️ Panel</a>`,
     ].join('\n'));
     // Mapa con vos, las tormentas y adónde ir (o escapar). Si no sale, el zoom del satélite.
     const dest = chaseEvent.tipo === 'cerca' ? (ESCAPE ? { lat: ESCAPE.lat, lon: ESCAPE.lon, label: ESCAPE.punto ? `ESCAPÁ: ${ESCAPE.punto}` : `ESCAPÁ (${ESCAPE.hacia})`, esc: true } : null)
@@ -656,6 +683,10 @@ if (state.chase.on && state.chase.loc) {
     }) : null;
     if (img) chaseOut.push({ photo: img, caption: `🗺️ Azul = vos · círculos = tormentas y su camino (+30/+60 min) · violeta = granizo · verde = ${dest?.esc ? 'hacia dónde escapar' : 'adónde ir'}.` });
     if (dest) chaseOut.push(pin2(dest, dest.esc ? `Alejate hasta acá (${ESCAPE.hacia})` : 'Punto para ver la tormenta', dest.label.replace(/^(IR ACÁ|ESCAPÁ): ?/, '')));
+    // Guía visual la primera vez que hay una tormenta en esta salida (o si la pidió con /guia).
+    const c0 = chaseEvent.cores[0];
+    const mdir0 = c0 ? (c0.mov_deg ?? ANG[c0.va_hacia] ?? 90) : 90;
+    if (c0 && (!state.chase.guia || state.chase.pideGuia)) { chaseOut.push(guiaLines(mdir0).join('\n')); state.chase.guia = true; state.chase.pideGuia = false; }
     const z = img ? null : chaseEvent.cores.find((c) => c.imagen);
     if (z) chaseOut.push({ photo: `${dir}/${z.imagen}`, caption: `🛰️ Zoom satélite: ${esc(z.cerca_de)} · tope ${z.tope_min_C} °C${z.topes_sobresalientes ? ` · ⚡ ${z.topes_sobresalientes} topes que sobresalen` : ''}. Blanco/magenta/rojo = topes más fríos (corriente ascendente fuerte).` });
   }
@@ -783,7 +814,7 @@ if (!state.chase.on && satHunt && (REPLAY || !quiet)) {
       `🛰️ <b>${cores[0].salto_rayos ? 'Salto de rayos en una tormenta' : `Tormenta ${cores[0].tendencia === 'nueva' ? 'nueva' : 'creciendo'}`} en el Pasillo</b> <i>(satélite de las ${nc.hora} h, posición estimada ahora)</i>`,
       ...cores.map(line),
       ...((await intercept(HOME, nc)) ? ['', ...interceptLines(INTER)] : []),
-      `<a href="${PANEL}">📡 Mirá el radar y el mapa</a> · si salís, mandá /caza y compartí tu ubicación`,
+      `<a href="${RADAR_SMN}">📡 Radar SMN</a> · <a href="${PANEL}">🗺️ Panel</a> · si salís, mandá /caza y compartí tu ubicación (y /guia para saber qué mirar)`,
     ].join('\n'));
     const img = await mapa({ titulo: INTER ? 'Tormenta en el Pasillo: adónde ir para verla' : 'Tormenta en el Pasillo', pie: `Satélite ${nc.hora} h`, yo: { ...HOME, label: 'LEONES' }, tormentas: cores.map(coreSpec),
       ...(INTER ? { destino: { lat: INTER.p.lat, lon: INTER.p.lon, label: INTER.stop ? `IR ACÁ: ${INTER.stop.label}` : 'IR ACÁ (ver de costado)' } } : {}) });

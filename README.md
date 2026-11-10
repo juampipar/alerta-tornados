@@ -116,6 +116,8 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 
 - **📋 Plan de caza con pasos** (aviso del día y cambio de plan): 1) a qué hora salir y a qué base rural ir; 2) de qué hora a qué hora esperar y hacia dónde mirar; 3) si nace una tormenta, el 🎯; 4) **hora de decidir**: si no nació nada a menos de 60 km, volver (o el plan B, otra zona a menos de 1 h 30 de la base); 5) puesta del sol. El vigía sigue el plan: a la hora de decidir avisa qué hacer según el satélite, y 30 min antes de que se ponga el sol avisa que hay que volver. **Ya en camino** (desde 1 h antes de la ventana) el pronóstico no cambia el plan: avisa "seguí el plan, ahora manda el satélite" (solo cambia si aparece una zona 15 puntos mejor). La IA recibe el plan y no lo contradice.
 
+- **👀 Guía visual y 📡 cómo leer el radar del SMN** (modo caza): la primera vez que aparece una tormenta en la salida (o con **/guia**) llega qué mirar en el cielo (base, nube pared, rotación, embudo, cortina de granizo, viento de entrada) y cómo leer el radar del SMN (colores, el "gancho", la animación), con los rumbos de esa tormenta (en el hemisferio sur la rotación está atrás a la izquierda de su camino y el granizo adelante a la derecha). Los avisos traen el link al radar del SMN. El radar no se lee automáticamente: el sitio del SMN bloquea el acceso automático (Cloudflare) y su API pide usuario.
+
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
