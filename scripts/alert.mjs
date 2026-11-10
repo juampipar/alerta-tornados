@@ -13,7 +13,7 @@ import { dirname } from 'node:path';
 import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, ruralStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from '../lib/modelos.mjs';
-import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion, peligroGranizo } from '../lib/tormenta.mjs';
+import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion, peligroGranizo, comoAlejarse } from '../lib/tormenta.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -327,6 +327,7 @@ async function buildBrief() {
         }) };
       } catch { return null; }
     })(),
+    escape: ESCAPE,
     intercepcion: INTER ? {
       tormenta: { lat: +INTER.c.lat.toFixed(2), lon: +INTER.c.lon.toFixed(2), aislada: INTER.aislada, fuerza: INTER.c.fuerza, va_hacia: rumbo(INTER.mdir), kmh: INTER.c.kmh, km_desde: INTER.d, rumbo_desde: INTER.desde },
       desde: INTER.desde_quien, quedate: INTER.quedate,
@@ -346,6 +347,8 @@ Reglas obligatorias:
 - Usá solo los datos del JSON: nombrá la parada, la hora de salida y la ruta si están. No inventes lugares, rutas ni datos.
 - Las paradas son RURALES (sobre ruta asfaltada, afuera de los pueblos, ojalá en un cruce): nunca mandes a esperar adentro de una ciudad,
   porque ahí no se ve nada y cuando llega la tormenta no se puede salir. A los pueblos solo se va a cargar nafta antes.
+- Si existe "escape", hay una tormenta encima o muy cerca: decí EXACTAMENTE hacia dónde moverse (rumbo, km y el punto si tiene
+  nombre), con esas palabras. Nunca digas solo "movete" sin rumbo ni distancia.
 - Si existe "intercepcion", ese es el punto CALCULADO para ver la mejor tormenta (al costado de su camino, adelante, llegando antes
   que ella y sin cruzarse por delante): recomendá ESE punto con su nombre, cuánto tardás, cuándo pasa la tormenta y hacia dónde escapar.
   No inventes otro punto. Si "aislada" es false, aclará que hay otras tormentas cerca y que es más difícil de ver.
@@ -424,7 +427,7 @@ async function aiAdvice(brief, focus) {
 
 /* ---------- 🎯 Punto para ver una tormenta en vivo (modo caza y aviso del satélite) ---------- */
 // La mejor tormenta aislada a la que llegás: punto al costado de su camino, adelante, enganchado a una ruta rural.
-let INTER = null;
+let INTER = null, ESCAPE = null;
 async function intercept(me, nc) {
   const x = mejorIntercepcion({ me, nc, now: NOW });
   if (!x) return null;
@@ -441,6 +444,23 @@ function interceptLines(x) {
       : `   Andá a ${x.stop ? `🌾 <b>${esc(x.stop.label)}</b>${x.stop.cruce ? ' (cruce, dos salidas)' : ''}` : 'este punto'} · llegás en ~${x.llegas_min} min, ella pasa a ~${x.lado} km al <b>${pasaDir}</b> tuyo en ~${x.pasa_min} min`,
     `   🧊 El granizo cae del lado ${pasaDir} de la tormenta: vos quedás del otro lado${x.granizo_grande ? `, a ${x.lado} km porque tiene señales de <b>granizo grande</b>` : ''}.`,
     `   Si se te acerca, escapá hacia el <b>${rumbo(x.away)}</b>. Nunca te cruces por delante. <a href="${ruta(x.p)}">🗺️ Ruta al punto</a>`,
+  ];
+}
+
+// Qué hacer con una tormenta que está cerca: hacia dónde, cuántos km y hasta qué punto (sobre ruta asfaltada).
+async function escapeLines(c, me) {
+  const x = comoAlejarse(c, me);
+  if (x.seVa) return ['', '✅ <b>Se está alejando de vos</b>: no hace falta que te muevas.'];
+  const dest = await ruralStop(movePoint(me, x.escape, x.km), x.escape, fetch, 8);
+  const p = dest ?? movePoint(me, x.escape, x.km);
+  ESCAPE = { hacia: x.rumbo_escape, km: x.km, punto: dest?.label ?? null, lat: +p.lat.toFixed(3), lon: +p.lon.toFixed(3), fuerte: x.fuerte, pasa_a_km: x.pasa_a, en_min: x.en_min };
+  return [
+    '',
+    x.sinMovimiento ? `No se sabe bien hacia dónde va: <b>alejate en línea recta</b>.`
+      : `${x.pasa_a < 3 ? '<b>Viene derecho hacia vos</b>' : `Va a pasar a <b>~${x.pasa_a} km</b> tuyo`}${x.en_min ? `: llega en <b>~${x.en_min} min</b>` : ' (ya está encima)'}${x.lado_granizo ? ' · ❗ estás del lado donde cae el granizo' : ''}.`,
+    x.fuerte ? `👉 <b>Movete ya ~${x.km} km hacia el ${x.rumbo_escape}</b>${dest ? `, hasta 🌾 <b>${esc(dest.label)}</b>` : ''}. No la cruces por delante.`
+      : `Es <b>moderada</b>: lluvia fuerte y rayos, sin señales de granizo grande.\n👉 Si no querés que te agarre, movete <b>~${x.km} km hacia el ${x.rumbo_escape}</b>${dest ? `, hasta 🌾 <b>${esc(dest.label)}</b>` : ''}.`,
+    `<a href="${ruta(p)}">🗺️ Ruta para alejarte</a>`,
   ];
 }
 
@@ -549,7 +569,9 @@ if (state.chase.on && state.chase.loc) {
       `${head} <i>(posición estimada ahora · satélite de las ${nc?.hora ?? '–'} h${age ? `, hace ${age} min` : ''})</i>`,
       ...(chaseEvent.cores.length ? chaseEvent.cores.map(line) : ['Sin núcleos de tormenta a menos de 150 km tuyo.']),
       ...(chaseEvent.acp ?? []).map((a) => `• 🚨 Aviso SMN: ${esc(a.event || a.headline)} a ${Math.round(distTo(a, me))} km`),
-      ...(chaseEvent.tipo !== 'cerca' && (await intercept(me, nc)) ? ['', ...interceptLines(INTER)] : []),
+      ...(chaseEvent.tipo === 'cerca' ? await escapeLines(chaseEvent.cores[0], me)
+        : (await intercept(me, nc)) ? ['', ...interceptLines(INTER)]
+        : chaseEvent.tipo === 'estado' ? ['', 'No hay ninguna tormenta fuerte a la que llegues a tiempo: <b>quedate donde estás</b> y esperá el próximo aviso.'] : []),
       `<a href="${PANEL}">📡 Radar y mapa</a>`,
     ].join('\n'));
     // Zoom del satélite de la tormenta principal (la misma imagen que analiza la IA).
