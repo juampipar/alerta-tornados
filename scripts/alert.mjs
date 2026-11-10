@@ -471,7 +471,7 @@ if (REPLAY) {
   messages.length = 0; // solo lo en vivo (modo caza / satélite)
   state.satSeen = {}; state.satLast = 0;
   state.chase = env.REPLAY_NOCHASE ? { on: false } : { on: true, since: NOW, loc: { lat: HOME.lat, lon: HOME.lon, t: NOW }, force: true, seen: {}, lastMsg: 0 };
-} else await readTelegram();
+} else if (!env.DRY_RUN) await readTelegram(); // sin enviar (panel): no consumir /caza, lo lee el vigía
 
 const ANG = { norte: 0, noreste: 45, este: 90, sudeste: 135, sur: 180, sudoeste: 225, oeste: 270, noroeste: 315 };
 if (state.chase.on) {
@@ -582,7 +582,7 @@ if (data) {
   }
   if (!REPLAY) await writeFile(`${dir}/brief.json`, JSON.stringify(brief, null, 1));
 }
-if (brief && messages.length && !(chaseOut.length && !chaseEvent && messages.length === chaseOut.length)) {
+if (brief && messages.length && !env.DRY_RUN && !(chaseOut.length && !chaseEvent && messages.length === chaseOut.length)) {
   const focus = satEvent && !chaseEvent ? `AVISO DEL SATÉLITE: nació o crece una tormenta fuerte en el Pasillo (ver nucleos_satelite). El usuario está en Leones. Decile si vale salir a buscarla (¿llega antes de que oscurezca? ¿hacia dónde va?), hacia dónde y por qué, o si conviene quedarse.`
     : chaseEvent ? `MODO CAZA: el usuario está en la ruta (ver "vos"). Decile exactamente qué hacer ahora con las tormentas detectadas por satélite (${chaseEvent.tipo === 'cerca' ? 'hay una tormenta cerca: priorizá su seguridad' : 'hay tormentas nuevas o creciendo'}): quedarse, o moverse (rumbo y km) para quedar de costado y adelante de la mejor, a ~20 km.`
     : live.length ? 'hay avisos del SMN de tormentas formándose: qué hacer en las próximas 2 horas'

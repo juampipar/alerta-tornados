@@ -19,9 +19,13 @@ async function published(url, maxMin = 115) {
   } catch { return null; }
 }
 
-const reused = process.env.REUSE_FORECAST ? await published(process.env.REUSE_FORECAST) : null;
+// ONLY_SMN=1 (el vigía de cada 10 min): solo renueva los avisos del SMN; el pronóstico lo calcula el panel.
+const ONLY_SMN = !!process.env.ONLY_SMN;
+const reused = ONLY_SMN ? null : process.env.REUSE_FORECAST ? await published(process.env.REUSE_FORECAST) : null;
 let bajado = false; // si el pronóstico principal se bajó en esta corrida, los modelos esperan un minuto (límite de Open-Meteo)
-if (reused) {
+if (ONLY_SMN) {
+  console.log('forecast.json y modelos.json: no se tocan (solo SMN)');
+} else if (reused) {
   await writeFile(`${dir}/forecast.json`, JSON.stringify(reused));
   console.log(`forecast.json: reusado (generado ${reused.generated})`);
 } else try {
@@ -34,8 +38,10 @@ if (reused) {
 }
 
 // Varios modelos (GFS, ICON, ECMWF): cada 6 h alcanza (salen corridas nuevas 4 veces por día) y cuida la cuota.
-const reusedM = process.env.REUSE_MODELS ? await published(process.env.REUSE_MODELS, 330) : null;
-if (reusedM) {
+const reusedM = ONLY_SMN ? null : process.env.REUSE_MODELS ? await published(process.env.REUSE_MODELS, 330) : null;
+if (ONLY_SMN) {
+  // nada
+} else if (reusedM) {
   await writeFile(`${dir}/modelos.json`, JSON.stringify(reusedM));
   console.log(`modelos.json: reusado (generado ${reusedM.generated})`);
 } else try {

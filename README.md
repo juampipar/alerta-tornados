@@ -102,8 +102,14 @@ La guía de uso está en el panel, botón **❓ Cómo usar**.
 - **Parada del plan** (`ruralStop` / `pickRural` en `lib/risk.mjs`): se calcula el punto ideal al costado del camino de las tormentas (lado norte si van al este) y se engancha a **una ruta asfaltada en el campo**, nunca adentro de un pueblo: a más de 9 km de una ciudad, 6 de un pueblo y 3 de una villa. Prefiere un **cruce de rutas** (dos salidas) y una ruta que salga hacia el lado bueno, para alejarse si la tormenta se acerca. Descarta caminos de tierra. Al pueblo más cercano solo se va antes, a cargar nafta. Datos de OpenStreetMap (Overpass).
 - **🎯 Punto para ver una tormenta en vivo** (`mejorIntercepcion` en `lib/tormenta.mjs`): con el satélite elige la mejor tormenta **aislada** a la que llegás (topes que sobresalen, salto de rayos, la más fría) y calcula un punto a 15 km del costado de su camino y adelante, al que llegás con 15 min de margen antes que ella y **sin cruzarte por delante**. También se engancha a una ruta rural. Sale en el mapa del panel (🎯, tocalo para ver la ruta), en el modo caza y en el aviso del satélite de Telegram, y la IA recibe ese punto para recomendarlo (no inventa otro).
 
+## Vigía: avisos cada 10 minutos de verdad
+GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 horas, y así una tormenta puede pasar sin que nadie la vea. Por eso los avisos de Telegram los manda **el vigía** (`.github/workflows/vigia.yml`): una tarea que queda prendida ~5 h 30 min revisando cada 10 minutos (avisos del SMN, satélite y rayos, modo caza) y al terminar **se vuelve a lanzar sola**. Tiene además un cron de respaldo cada 3 h por si la cadena se corta. Cada 30 min lanza el panel (`pages.yml` con `auto=true`), así los datos del sitio están frescos.
+- El pronóstico pesado lo calcula el panel cada 2 h (cuota de Open-Meteo); el vigía usa el publicado y solo renueva el SMN (`ONLY_SMN=1`).
+- El panel ya no manda mensajes (`DRY_RUN`), salvo cuando se lo corre a mano con **prueba** o **repetir**.
+- Para ver si está andando: Actions → "Vigía (avisos cada 10 min)": tiene que haber una corrida en curso. Cada vuelta deja en el log qué decidió.
+
 ## Alertas por Telegram
-Cada 10 minutos, el mismo workflow revisa los datos. Manda estos mensajes:
+Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
 - 🌪️ **Día de caza**: hoy o mañana alguna zona llega a **60** o más. Trae la mejor zona, la hora pico, a qué hora salir desde Leones, hacia dónde van las tormentas, los ingredientes explicados (energía, cizalladura, giro cerca del suelo, base de nube), otras zonas y la ruta en Google Maps. Uno por día, y otro si sube 10 puntos. Entre las 23 y las 7 h no se manda.
 - 🚨 **¡Ya se están formando!**: solo en un día de caza, cuando el SMN emite un aviso a corto plazo cerca de Leones (200 km) o de las zonas marcadas (80 km). Es la confirmación de que lo que marcaba el pronóstico está pasando. Los avisos del SMN de días comunes **no** se mandan (son muchos y casi nunca son de tornado).
