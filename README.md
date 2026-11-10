@@ -98,6 +98,10 @@ Indica dónde hay ingredientes; **no predice tornados**.
 
 La guía de uso está en el panel, botón **❓ Cómo usar**.
 
+## Dónde pararse (paradas rurales y punto para ver la tormenta)
+- **Parada del plan** (`ruralStop` / `pickRural` en `lib/risk.mjs`): se calcula el punto ideal al costado del camino de las tormentas (lado norte si van al este) y se engancha a **una ruta asfaltada en el campo**, nunca adentro de un pueblo: a más de 9 km de una ciudad, 6 de un pueblo y 3 de una villa. Prefiere un **cruce de rutas** (dos salidas) y una ruta que salga hacia el lado bueno, para alejarse si la tormenta se acerca. Descarta caminos de tierra. Al pueblo más cercano solo se va antes, a cargar nafta. Datos de OpenStreetMap (Overpass).
+- **🎯 Punto para ver una tormenta en vivo** (`mejorIntercepcion` en `lib/tormenta.mjs`): con el satélite elige la mejor tormenta **aislada** a la que llegás (topes que sobresalen, salto de rayos, la más fría) y calcula un punto a 15 km del costado de su camino y adelante, al que llegás con 15 min de margen antes que ella y **sin cruzarte por delante**. También se engancha a una ruta rural. Sale en el mapa del panel (🎯, tocalo para ver la ruta), en el modo caza y en el aviso del satélite de Telegram, y la IA recibe ese punto para recomendarlo (no inventa otro).
+
 ## Alertas por Telegram
 Cada 10 minutos, el mismo workflow revisa los datos. Manda estos mensajes:
 

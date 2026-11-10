@@ -10,10 +10,10 @@
 //     cerca de Leones o de las zonas marcadas. Los avisos del SMN de días comunes no se mandan.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, nearestStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
+import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, ruralStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from '../lib/modelos.mjs';
-import { amenazas, valeAvisar, revisar, aciertos, NIVEL } from '../lib/tormenta.mjs';
+import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion } from '../lib/tormenta.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -122,15 +122,16 @@ async function optionsFor(date) {
   if (!zs.length) return (optCache[date] = []);
   const nowH = date === today ? nowMin / 60 : null;
   const base = huntOptions(zs, data.towns, data.times, date, HOME, null, nowH);
-  state.stops ??= {}; state.places ??= {};
+  // Parada rural: sobre ruta asfaltada, lejos de los pueblos, ojalá en un cruce con salida hacia el lado bueno.
+  // false = se buscó y no hay (no se vuelve a pedir).
+  delete state.stops; state.stopsR ??= {}; state.places ??= {};
   for (const o of base) {
     const k = plainKey(o.base);
-    if (state.stops[k]) continue;
+    if (k in state.stopsR) continue;
     await sleep(1100); // OpenStreetMap pide como máximo 1 consulta por segundo
-    const st = await nearestStop(o.base, data.towns);
-    if (st) state.stops[k] = st;
+    state.stopsR[k] = (await ruralStop(o.base, (o.mdir - 90 + 360) % 360)) || false;
   }
-  const opts = huntOptions(zs, data.towns, data.times, date, HOME, (bp) => state.stops[plainKey(bp)] || null, nowH);
+  const opts = huntOptions(zs, data.towns, data.times, date, HOME, (bp) => state.stopsR[plainKey(bp)] || null, nowH);
   for (const o of opts) {
     const k = plainKey(o.vp);
     if (!(k in state.places)) { await sleep(1100); state.places[k] = await placeName(o.vp); }
@@ -138,7 +139,15 @@ async function optionsFor(date) {
   }
   return (optCache[date] = opts);
 }
-const stopLine = (o) => `${o.stop?.kind === 'estación' ? '⛽ ' : ''}<b>${esc(o.stop?.label ?? 'punto aproximado')}</b>${o.place ? ` · cerca de ${esc(o.place.place)}${o.place.road ? ` (${esc(o.place.road)})` : ''}` : ''}`;
+const stopLine = (o) => o.stop?.kind === 'rural' ? `🌾 <b>${esc(o.stop.label)}</b>`
+  : `<b>${esc(o.stop?.label ?? 'punto aproximado')}</b>${o.place ? ` · cerca de ${esc(o.place.place)}${o.place.road ? ` (${esc(o.place.road)})` : ''}` : ''}`;
+// Qué tiene de bueno la parada rural: cruce, salida y dónde cargar nafta antes.
+const stopWhy = (o) => {
+  const st = o.stop, away = rumbo(o.mdir - 90);
+  if (st?.kind !== 'rural') return `   Punto aproximado al ${away} del camino de las tormentas: buscá cerca una ruta asfaltada con campo abierto, fuera del pueblo`;
+  return `   Campo abierto al ${away} del camino de las tormentas${st.cruce ? ' · <b>cruce de rutas</b> (dos salidas)' : ''}${st.escape ? ` · salida hacia el ${away} para alejarte` : ''}`
+    + (st.pueblo ? `\n   ⛽ Cargá nafta y comprá algo antes, en ${esc(st.pueblo.name)}` : '');
+};
 const ruta = (p) => maps(+p.lat.toFixed(4), +p.lon.toFixed(4));
 const timeLine = (o) => !o.reachable ? `no llegás antes del pico` : o.late ? `<b>salí ya</b> (llegás ${clock(o.arriveAt * 60)})` : `salir <b>${clock(o.leave * 60)}</b>`;
 function bestTowns(date) {
@@ -193,8 +202,7 @@ async function huntMessage(date, label, rank, prev) {
     modelsLine(o.z),
     biasLine(),
     `👁 Parar en: ${stopLine(o)}`,
-    o.stop?.kind === 'pueblo' ? `   (no encontré estación de servicio cerca del punto ideal: es el pueblo más cercano) · <a href="${ruta(o.vp)}">Ruta</a>`
-      : `   Al ${side} del camino de las tormentas · <a href="${ruta(o.vp)}">Ruta a la parada</a>`,
+    `${stopWhy(o)} · <a href="${ruta(o.vp)}">Ruta a la parada</a>`,
     `🚗 ${o.dist} km en línea recta, ~${dur(o.drive)} desde Leones`,
     !o.reachable ? '⏰ <b>Ya no llegás antes del pico</b>: si estás cerca, seguí el radar'
       : o.late ? `⏰ <b>Salí ya</b>: llegás a las ${clock(o.arriveAt * 60)} h`
@@ -316,6 +324,12 @@ async function buildBrief() {
         }) };
       } catch { return null; }
     })(),
+    intercepcion: INTER ? {
+      tormenta: { lat: +INTER.c.lat.toFixed(2), lon: +INTER.c.lon.toFixed(2), aislada: INTER.aislada, fuerza: INTER.c.fuerza, va_hacia: rumbo(INTER.mdir), kmh: INTER.c.kmh, km_desde: INTER.d, rumbo_desde: INTER.desde },
+      desde: INTER.desde_quien, quedate: INTER.quedate,
+      punto: { nombre: INTER.stop?.label ?? 'punto aproximado', lat: +INTER.p.lat.toFixed(3), lon: +INTER.p.lon.toFixed(3), cruce: INTER.stop?.cruce ?? false },
+      llegas_en_min: INTER.llegas_min, la_tormenta_pasa_en_min: INTER.pasa_min, pasa_por_el: rumbo(INTER.mdir + 90), escapar_hacia: rumbo(INTER.away),
+    } : null,
     vos: state.chase?.on && state.chase.loc ? { lat: +state.chase.loc.lat.toFixed(3), lon: +state.chase.loc.lon.toFixed(3), hace_min: Math.round((Date.now() - state.chase.loc.t) / 60000), modo_caza: true } : null,
     imagenes: await (async () => { try { return JSON.parse(await readFile(`${dir}/img/meta.json`, 'utf8')).imagenes.map((x) => ({ ...x, url: `data/img/${x.archivo}` })); } catch { return []; } })(),
     nota: 'Potencial 0–100 de supercélulas con rotación según modelos (no es un aviso de tornado). Radar de velocidad no disponible.',
@@ -326,7 +340,12 @@ const AI_RULES = `Sos un cazador de tormentas experto del Pasillo de los Tornado
 que sale desde Leones (Córdoba). Con el resumen JSON que sigue, decile QUÉ HACER AHORA, en castellano rioplatense, simple y concreto.
 Reglas obligatorias:
 - Máximo 6 líneas cortas. Nada de introducciones. Empezá con la decisión: "Salí", "Esperá", "Quedate", "Movete" o "Hoy no salgas".
-- Usá solo los datos del JSON: nombrá la parada (estación/pueblo), la hora de salida y la ruta si están. No inventes lugares, rutas ni datos.
+- Usá solo los datos del JSON: nombrá la parada, la hora de salida y la ruta si están. No inventes lugares, rutas ni datos.
+- Las paradas son RURALES (sobre ruta asfaltada, afuera de los pueblos, ojalá en un cruce): nunca mandes a esperar adentro de una ciudad,
+  porque ahí no se ve nada y cuando llega la tormenta no se puede salir. A los pueblos solo se va a cargar nafta antes.
+- Si existe "intercepcion", ese es el punto CALCULADO para ver la mejor tormenta (al costado de su camino, adelante, llegando antes
+  que ella y sin cruzarse por delante): recomendá ESE punto con su nombre, cuánto tardás, cuándo pasa la tormenta y hacia dónde escapar.
+  No inventes otro punto. Si "aislada" es false, aclará que hay otras tormentas cerca y que es más difícil de ver.
 - Si hay avisos a corto plazo del SMN cerca (< 80 km), priorizalos: decí dónde están y hacia dónde moverse para quedar de costado.
 - Seguridad: nunca recomiendes acercarse a menos de 15 km de una tormenta, ponerse delante de su camino, caminos de tierra,
   ni salir o seguir de noche (después de la puesta del sol). Interceptar de costado (lado norte si van al este), nunca perseguir por detrás.
@@ -399,6 +418,27 @@ async function aiAdvice(brief, focus) {
   return null;
 }
 
+
+/* ---------- 🎯 Punto para ver una tormenta en vivo (modo caza y aviso del satélite) ---------- */
+// La mejor tormenta aislada a la que llegás: punto al costado de su camino, adelante, enganchado a una ruta rural.
+let INTER = null;
+async function intercept(me, nc) {
+  const x = mejorIntercepcion({ me, nc, now: NOW });
+  if (!x) return null;
+  const st = await ruralStop(x.base, x.away, fetch, 8);
+  const p = st ?? x.base;
+  return (INTER = { ...x, stop: st, p, desde_quien: me === HOME ? 'Leones' : 'vos' });
+}
+function interceptLines(x) {
+  const c = x.c, pasaDir = rumbo(x.mdir + 90);
+  const sig = [c.topes_sobresalientes ? '⚡ topes que sobresalen' : null, c.salto_rayos ? '⚡⚡ salto de rayos' : null].filter(Boolean).join(', ');
+  return [
+    `🎯 <b>Para verla:</b> ${x.aislada ? '<b>tormenta aislada</b>' : 'tormenta (hay otras cerca)'} ${esc(c.fuerza)} a ${x.d} km al ${x.desde} ${x.desde_quien === 'vos' ? 'tuyo' : 'de Leones'}, va al <b>${rumbo(x.mdir)}</b> a ~${c.kmh} km/h${sig ? ` · ${sig}` : ''}`,
+    x.quedate ? `   <b>Quedate donde estás</b>: pasa a ~15 km al ${pasaDir} tuyo en ~${x.pasa_min} min`
+      : `   Andá a ${x.stop ? `🌾 <b>${esc(x.stop.label)}</b>${x.stop.cruce ? ' (cruce, dos salidas)' : ''}` : 'este punto'} · llegás en ~${x.llegas_min} min, ella pasa a ~15 km al <b>${pasaDir}</b> tuyo en ~${x.pasa_min} min`,
+    `   Si se te acerca, escapá hacia el <b>${rumbo(x.away)}</b>. Nunca te cruces por delante. <a href="${ruta(x.p)}">🗺️ Ruta al punto</a>`,
+  ];
+}
 
 /* ---------- 🎯 Modo caza: ubicación en vivo por Telegram + núcleos del satélite ---------- */
 // El usuario comparte su ubicación en tiempo real con el bot (o manda /caza) y el sistema le avisa en cada corrida
@@ -485,6 +525,7 @@ if (state.chase.on && state.chase.loc) {
       `${head} <i>(posición estimada ahora · satélite de las ${nc?.hora ?? '–'} h${age ? `, hace ${age} min` : ''})</i>`,
       ...(chaseEvent.cores.length ? chaseEvent.cores.map(line) : ['Sin núcleos de tormenta a menos de 150 km tuyo.']),
       ...(chaseEvent.acp ?? []).map((a) => `• 🚨 Aviso SMN: ${esc(a.event || a.headline)} a ${Math.round(distTo(a, me))} km`),
+      ...(chaseEvent.tipo !== 'cerca' && (await intercept(me, nc)) ? ['', ...interceptLines(INTER)] : []),
       `<a href="${PANEL}">📡 Radar y mapa</a>`,
     ].join('\n'));
     // Zoom del satélite de la tormenta principal (la misma imagen que analiza la IA).
@@ -522,6 +563,7 @@ if (!state.chase.on && satHunt && (REPLAY || !quiet)) {
     messages.push([
       `🛰️ <b>${cores[0].salto_rayos ? 'Salto de rayos en una tormenta' : `Tormenta ${cores[0].tendencia === 'nueva' ? 'nueva' : 'creciendo'}`} en el Pasillo</b> <i>(satélite de las ${nc.hora} h, posición estimada ahora)</i>`,
       ...cores.map(line),
+      ...((await intercept(HOME, nc)) ? ['', ...interceptLines(INTER)] : []),
       `<a href="${PANEL}">📡 Mirá el radar y el mapa</a> · si salís, mandá /caza y compartí tu ubicación`,
     ].join('\n'));
     const z = cores.find((c) => c.imagen);

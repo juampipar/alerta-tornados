@@ -1,11 +1,11 @@
-import { HOME, POINTS, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, nearestStop, plainKey, bearingTo, coreAt } from './lib/risk.mjs';
+import { HOME, POINTS, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, ruralStop, plainKey, bearingTo, coreAt } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 import { loadHistory } from './lib/historial-ui.mjs';
 import { initRed, setRedLayer } from './lib/red.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from './lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from './lib/modelos.mjs';
 import { featureRow, predict } from './lib/entrenar.mjs';
-import { amenazas, valeAvisar, NIVEL } from './lib/tormenta.mjs';
+import { amenazas, valeAvisar, NIVEL, mejorIntercepcion } from './lib/tormenta.mjs';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -193,7 +193,7 @@ $$('#layers .chip').forEach((b) => (b.onclick = () => {
   S.layers[k] = on; b.classList.toggle('on', on);
   if (k === 'zonas') { on ? gridLayer.addTo(map) : gridLayer.remove(); $('#legend').hidden = !on; renderZones(); }
   if (k === 'lluvia') renderWrf();
-  if (k === 'nucleos') renderNowcast();
+  if (k === 'nucleos') { renderNowcast(); renderIntercept(); }
   if (k === 'smn') on ? smnLayer.addTo(map) : smnLayer.remove();
   if (k === 'red') setRedLayer(on);
   if (k === 'radar') { frames.forEach((f) => (on ? f.addTo(map) : f.remove())); if (!on) stamp(''); }
@@ -364,7 +364,8 @@ function pinBanner() {
 const nowDec = () => { const d = new Date(Date.now() - 3 * 3600e3); return { date: d.toISOString().slice(0, 10), h: d.getUTCHours() + d.getUTCMinutes() / 60 }; };
 // Paradas encontradas (estación de servicio o pueblo), guardadas también en el navegador.
 const stopCache = new Map();
-try { for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem('stops') || '{}'))) stopCache.set(k, v); } catch { /* sin almacenamiento */ }
+// Paradas rurales (sobre ruta asfaltada, afuera de los pueblos). false = se buscó y no hay.
+try { for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem('stopsR') || '{}'))) stopCache.set(k, v); } catch { /* sin almacenamiento */ }
 const stopPending = new Set();
 function buildOptions(date) {
   const now = nowDec();
@@ -372,21 +373,19 @@ function buildOptions(date) {
 }
 // Busca las paradas que falten y vuelve a dibujar cuando llegan.
 async function fetchStops() {
-  const miss = (S.opts ?? []).map((o) => o.base).filter((b) => !stopCache.has(plainKey(b)) && !stopPending.has(plainKey(b)));
+  const miss = (S.opts ?? []).filter((o) => !stopCache.has(plainKey(o.base)) && !stopPending.has(plainKey(o.base)));
   if (!miss.length) return;
-  for (const b of miss) {
-    const k = plainKey(b);
+  for (const o of miss) {
+    const k = plainKey(o.base);
     stopPending.add(k);
-    const st = await nearestStop(b, S.data.towns);
+    const st = await ruralStop(o.base, (o.mdir - 90 + 360) % 360);
     stopPending.delete(k);
-    if (st) {
-      stopCache.set(k, st);
-      try { localStorage.setItem('stops', JSON.stringify(Object.fromEntries([...stopCache].slice(-80)))); } catch { /* sin almacenamiento */ }
-    }
+    stopCache.set(k, st || false);
+    try { localStorage.setItem('stopsR', JSON.stringify(Object.fromEntries([...stopCache].slice(-80)))); } catch { /* sin almacenamiento */ }
   }
   render();
 }
-const stopTxt = (o) => (o.stop ? `${o.stop.kind === 'estación' ? '⛽ ' : ''}<b>${esc(o.stop.label)}</b>` : '<b>punto aproximado</b>');
+const stopTxt = (o) => (o.stop ? `${o.stop.kind === 'rural' ? '🌾 ' : ''}<b>${esc(o.stop.label)}</b>` : '<b>punto aproximado</b>');
 const timeTxt = (o) => !o.reachable ? `<span class="owarn">no llegás antes del pico (${hm(o.peakH)})</span>`
   : o.late ? `<b>salí ya</b>: llegás ~${hm(o.arriveAt)}` : `salir a las <b>${hm(o.leave)}</b>`;
 const routeTxt = (o) => o.hit ? `<span class="owarn">⚠️ el camino cruza el paso de las tormentas (~${hm(o.hit.h)}): entrá por el ${rumbo(o.mdir - 90)}</span>`
@@ -680,7 +679,9 @@ function renderPlan() {
   if (vleave >= 12.5 && future(12)) rows.push(['12:00', 'Decidí si vas. Si el puntaje bajó mucho o el plan cambió de zona, no vayas.']);
   if (o) {
     if (vdist >= 15) rows.push([o.late ? 'Ahora' : hm(vleave), `<b>Salí</b> desde ${esc(S.origin.label)} hacia ${vpTxt} (${vdist} km en línea recta, ~${vdrive.toFixed(1)} h). Tanque lleno y celular cargado.`]);
-    rows.push([hm(o.arriveAt), `<b>Llegás a la parada.</b> ${o.stop?.kind === 'estación' ? 'Estacioná ahí: nafta, baño y comida.' : `Buscá dónde estacionar: ${station}.`} Desde ahí mirá hacia el ${from}, ojalá con campo abierto. ${hit ? '' : '✅ Con este horario el camino no cruza por delante de las tormentas.'}`]);
+    const st = o.stop;
+    if (st?.kind === 'rural' && st.pueblo) rows.push(['Antes', `Cargá nafta, baño y comida en <b>${esc(st.pueblo.name)}</b>. No esperes en el pueblo: ahí no se ve nada y cuando llega la tormenta cuesta salir.`]);
+    rows.push([hm(o.arriveAt), `<b>Llegás a la parada</b>${st?.kind === 'rural' ? `: campo abierto sobre ruta asfaltada${st.cruce ? ', en un <b>cruce</b> (dos salidas)' : ''}${st.escape ? `, con salida hacia el <b>${side}</b> para alejarte` : ''}. Parate en una banquina ancha o una entrada de campo, sin cortar el paso.` : `. Es un punto aproximado: buscá cerca una ruta asfaltada con campo abierto, fuera del pueblo (no caminos de tierra).`} Mirá hacia el ${from}. ${hit ? '' : '✅ Con este horario el camino no cruza por delante de las tormentas.'}`]);
   } else {
     if (dist >= 15) rows.push([hm(leave), `<b>Salí</b> desde ${esc(S.origin.label)} hacia ${esc(t.name)} (${dist} km, ~${drive.toFixed(1)} h). Tanque lleno y celular cargado.`]);
     rows.push([hm(arrive), dist >= 15 ? `<b>Llegá</b> a ${station}. Baño, comida y nafta.` : `<b>Estás en la zona:</b> esperá en ${station}. Baño, comida y nafta.`]);
@@ -850,7 +851,7 @@ const NC_ANG = { norte: 0, noreste: 45, este: 90, sudeste: 135, sur: 180, sudoes
 let nowcast = null;
 async function loadNowcast() {
   try { nowcast = await getJson('data/nowcast.json'); } catch { nowcast = null; }
-  renderNowcast(); renderStorm();
+  renderNowcast(); renderStorm(); renderIntercept();
 }
 function renderNowcast() {
   ncLayer.clearLayers();
@@ -913,6 +914,29 @@ function renderStorm() {
     <p class="why">${sat}. El satélite no ve el granizo, da señales: lo confirma un aviso del SMN o alguien que lo vea.</p>`;
 }
 
+// 🎯 Dónde pararte para ver la mejor tormenta aislada a la que llegás desde tu punto (la misma cuenta que Telegram).
+const interLayer = L.layerGroup().addTo(map);
+const interStops = new Map();
+function renderIntercept() {
+  interLayer.clearLayers();
+  if (!S.layers.nucleos || !nowcast) return;
+  const x = mejorIntercepcion({ me: S.origin, nc: nowcast });
+  if (!x) return;
+  const k = plainKey(x.base);
+  if (!interStops.has(k)) {
+    interStops.set(k, null);
+    ruralStop(x.base, x.away, fetch, 8).then((st) => { interStops.set(k, st || false); renderIntercept(); });
+  }
+  const st = interStops.get(k) || null, p = st ?? x.base, pasa = rumbo(x.mdir + 90);
+  const tip = `<b>🎯 Para ver la tormenta ${x.aislada ? 'aislada' : '(hay otras cerca)'}</b> que está a ${x.d} km al ${x.desde} tuyo y va al ${rumbo(x.mdir)} a ~${x.c.kmh} km/h<br>`
+    + (x.quedate ? `<b>Quedate donde estás</b>: pasa a ~15 km al ${pasa} en ~${x.pasa_min} min`
+      : `Parate en ${st ? `🌾 <b>${esc(st.label)}</b>${st.cruce ? ' (cruce, dos salidas)' : ''}` : 'este punto (buscá ruta asfaltada cerca)'}<br>Llegás en ~${x.llegas_min} min · ella pasa a ~15 km al <b>${pasa}</b> en ~${x.pasa_min} min`)
+    + `<br>Si se te acerca, escapá hacia el <b>${rumbo(x.away)}</b>. Nunca te cruces por delante.`;
+  L.polyline([[S.origin.lat, S.origin.lon], [p.lat, p.lon]], { pane: 'smn', color: '#3ddc97', weight: 2, dashArray: '4 6', interactive: false }).addTo(interLayer);
+  L.marker([p.lat, p.lon], { pane: 'smn', icon: L.divIcon({ className: 'intermark', html: '<span>🎯</span>', iconSize: null }) })
+    .bindPopup(`${tip}<br><a href="${mapsDir(S.origin, p)}" target="_blank" rel="noopener">🗺️ Ruta al punto →</a>`, { maxWidth: 260, className: 'intertip' }).addTo(interLayer);
+}
+
 async function loadSmn() {
   try { S.smn = await getJson('data/smn.json'); } catch { S.smn = { ok: false, error: 'sin archivo de avisos' }; }
   renderSmn(); renderStatus(); renderStorm();
@@ -950,7 +974,7 @@ function setOrigin(o, mode) {
   $$('#origin [data-o]').forEach((x) => x.classList.toggle('on', x.dataset.o === mode));
   $('#originSel').value = mode === 'town' ? o.label : '';
   $('#originSel').classList.toggle('on', mode === 'town');
-  drawOrigin(); render(); if (S.smn) renderSmn(); renderOriginAsk(); renderStorm();
+  drawOrigin(); render(); if (S.smn) renderSmn(); renderOriginAsk(); renderStorm(); renderIntercept();
 }
 function startGps(btn = $('#origin [data-o="gps"]'), quiet = false) {
   if (!navigator.geolocation) { if (!quiet) alert('Tu navegador no da la ubicación. Elegí un pueblo o tocá el mapa.'); return; }
@@ -1104,6 +1128,6 @@ function setWindy(o = windyO) {
 $$('#windysw button').forEach((b) => (b.onclick = () => setWindy(b.dataset.o)));
 setInterval(loadRadar, 5 * 60e3);
 setInterval(() => { loadSmn(); loadNowcast(); }, 10 * 60e3);
-setInterval(() => { renderNowcast(); renderStorm(); }, 60e3); // la posición estimada avanza minuto a minuto
+setInterval(() => { renderNowcast(); renderStorm(); renderIntercept(); }, 60e3); // la posición estimada avanza minuto a minuto
 loadNowcast();
 setInterval(() => { loadForecast(); loadWrf(); }, 60 * 60e3);
