@@ -118,6 +118,9 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 
 - **👀 Guía visual y 📡 cómo leer el radar del SMN** (modo caza): la primera vez que aparece una tormenta en la salida (o con **/guia**) llega qué mirar en el cielo (base, nube pared, rotación, embudo, cortina de granizo, viento de entrada) y cómo leer el radar del SMN (colores, el "gancho", la animación), con los rumbos de esa tormenta (en el hemisferio sur la rotación está atrás a la izquierda de su camino y el granizo adelante a la derecha). Los avisos traen el link al radar del SMN. El radar no se lee automáticamente: el sitio del SMN bloquea el acceso automático (Cloudflare) y su API pide usuario.
 
+- **👉 QUÉ HACER**: cada aviso de tormenta empieza con una sola línea con la acción (andá al punto, quedate, movete X km hacia tal lado, guardá el auto).
+- **Tormentas para mirar**: además de las fuertes, el 🎯 incluye tormentas **moderadas aisladas que crecen** (o con rayos en aumento) a menos de 100 km, marcadas como "para mirar, pocas chances de tornado". El satélite subestima algunas tormentas que en el radar se ven fuertes.
+
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
