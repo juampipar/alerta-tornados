@@ -516,7 +516,7 @@ function interceptLines(x) {
   const sig = [c.topes_sobresalientes ? '⚡ topes que sobresalen' : null, c.salto_rayos ? '⚡⚡ salto de rayos' : null].filter(Boolean).join(', ');
   return [
     ...(x.moderada ? ['🎯 <i>Tormenta moderada aislada: para ir a mirarla, con pocas chances de tornado (en el radar puede verse más fuerte que en el satélite).</i>'] : []),
-    `🎯 <b>Para verla:</b> ${x.aislada ? '<b>tormenta aislada</b>' : 'tormenta (hay otras cerca)'} ${esc(c.fuerza)} a ${x.d} km al ${x.desde} ${x.desde_quien === 'vos' ? 'tuyo' : 'de Leones'}, va al <b>${rumbo(x.mdir)}</b> a ~${c.kmh} km/h${sig ? ` · ${sig}` : ''}`,
+    `🎯 <b>Para verla:</b> ${x.aislada ? '<b>tormenta aislada</b>' : x.puntaNorte ? 'tormenta del <b>extremo norte</b> del grupo (la que mejor recibe el aire cálido)' : 'tormenta (hay otras cerca)'} ${esc(c.fuerza)} a ${x.d} km al ${x.desde} ${x.desde_quien === 'vos' ? 'tuyo' : 'de Leones'}, va al <b>${rumbo(x.mdir)}</b> a ~${c.kmh} km/h${sig ? ` · ${sig}` : ''}`,
     x.quedate ? `   <b>Quedate donde estás</b>: pasa a ~${x.lado} km al ${pasaDir} tuyo en ~${x.pasa_min} min`
       : `   Andá a ${x.stop ? `🌾 <b>${esc(x.stop.label)}</b>${x.stop.cruce ? ' (cruce, dos salidas)' : ''}` : 'este punto'} · llegás en ~${x.llegas_min} min, ella pasa a ~${x.lado} km al <b>${pasaDir}</b> tuyo en ~${x.pasa_min} min`,
     `   🧊 El granizo cae del lado ${pasaDir} de la tormenta: vos quedás del otro lado${x.granizo_grande ? `, a ${x.lado} km porque tiene señales de <b>granizo grande</b>` : ''}.`,
