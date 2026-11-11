@@ -123,6 +123,8 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 
 - **🛡️ Camino seguro** (`rutaLibre` en `lib/tormenta.mjs`): el plan hace llegar a la base 1 h 30 antes de que empiecen las tormentas (viaje con cielo seco). Con el modo caza, si el camino a la base pasa por una tormenta, avisa "esperá bajo techo ~30 min" y después "el camino ya está libre". A la hora de decidir y al ponerse el sol revisa el camino de vuelta a Leones. El 🎯 descarta puntos cuyo camino pasa por otra tormenta. El umbral del aviso del día vuelve a 60.
 
+- **Tormentas en línea → la del extremo norte**: si no hay ninguna aislada, el 🎯 prefiere la del extremo norte del grupo (en Argentina el aire cálido y húmedo entra del norte y a esa no se lo corta ninguna otra), salvo que otra muestre señales claras de supercelda (topes que sobresalen o salto de rayos).
+
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
