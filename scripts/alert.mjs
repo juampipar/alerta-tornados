@@ -59,6 +59,8 @@ const BIAS = await (async () => {
 state.smn ??= {}; state.days ??= {};
 // v2: los puntajes guardados antes eran de la zona mal calculada (sobre el río o Uruguay): se olvidan.
 if (state.v !== 2) { state.days = {}; state.v = 2; }
+// Antes el aviso de MAÑANA se guardaba con la fecha sola: pasarlo a "fecha:m" para que llegue también el de HOY.
+for (const d of Object.keys(state.days)) if (!d.includes(':') && d > new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10)) { state.days[`${d}:m`] = state.days[d]; delete state.days[d]; }
 const messages = [];
 // REPLAY_AT=2026-11-03T21:40 (UTC): repite ese momento en modo caza desde Leones, para probar (no toca el estado).
 const REPLAY = env.REPLAY_AT ? Date.parse(env.REPLAY_AT.endsWith('Z') ? env.REPLAY_AT : env.REPLAY_AT + 'Z') : null;
