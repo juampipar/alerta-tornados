@@ -1,6 +1,6 @@
 // Alertas por Telegram. Corre en el workflow de cada hora, después de build-data.mjs.
 // Uso: node scripts/alert.mjs _site
-// Env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, MIN_SCORE (50), RADIUS_KM (200),
+// Env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, MIN_SCORE (60), RADIUS_KM (200),
 //      ALERT_STATE (archivo donde recuerda lo ya enviado), TEST=1 (manda el resumen igual), DRY_RUN=1 (no envía).
 //
 // Dos mensajes:
@@ -16,11 +16,11 @@ import { dirname } from 'node:path';
 import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, ruralStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from '../lib/modelos.mjs';
-import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion, peligroGranizo, comoAlejarse, paraMirar } from '../lib/tormenta.mjs';
+import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion, peligroGranizo, comoAlejarse, paraMirar, rutaLibre } from '../lib/tormenta.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
-const MIN = +(env.MIN_SCORE || 50);
+const MIN = +(env.MIN_SCORE || 60);
 const CLARO = Math.max(MIN, 60); // desde acá es un día de caza claro; entre MIN y CLARO, "día posible"
 const RADIUS = +(env.RADIUS_KM || 200);
 const NEAR_ZONE = 80; // km: aviso del SMN "cerca" de una zona marcada
@@ -230,6 +230,7 @@ function planLines(o, p) {
     `3️⃣ <b>Si nace una tormenta</b>, te llega 🎯 con el punto para verla, el mapa y la ruta. Andá ahí: de costado, nunca adelante.`,
     `4️⃣ <b>${clock(p.decision * 60)}</b> · Decisión: si no nació nada a menos de 60 km, ${p.planB ? `andá al plan B: Zona ${esc(p.planB.zona)} (${p.planB.v}), a ${p.planB.km} km de la base` : '<b>volvé</b>'}. Te aviso a esa hora.`,
     `5️⃣ <b>${clock(p.ocaso * 60)}</b> · Se pone el sol: volvé aunque siga.`,
+    '🛡️ <b>Seguridad</b>: viajás con el cielo seco (llegás 1 h 30 antes de que nazcan). Si en el camino aparece una tormenta, te aviso que esperes bajo techo. ⚡ Adentro del auto estás protegido de los rayos: no te bajes si hay rayos cerca. 🧊 Siempre te dejo del lado sin granizo.',
     '<i>Al salir mandá /caza y compartí la ubicación en tiempo real: así todo se calcula desde donde estés.</i>',
   ];
 }
@@ -294,7 +295,7 @@ if (data) {
     if (fire && off === 0) {
       const o = (await optionsFor(date))[0];
       if (o) { const pl = planDe(o, await optionsFor(date), date);
-        state.plan = { date, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, base: { lat: o.vp.lat, lon: o.vp.lon }, inicio: pl.inicio, decision: pl.decision, ocaso: pl.ocaso, planB: pl.planB, t: NOW }; messages.push(pin2(o.vp, `Parada · Zona ${o.z.name}`, o.stop?.label ?? 'punto aproximado')); }
+        state.plan = { date, zona: o.z.name, ctr: o.z.ctr, v: o.z.v, stop: o.stop?.label ?? null, base: { lat: o.vp.lat, lon: o.vp.lon }, llegada: o.arriveAt, inicio: pl.inicio, decision: pl.decision, ocaso: pl.ocaso, planB: pl.planB, t: NOW }; messages.push(pin2(o.vp, `Parada · Zona ${o.z.name}`, o.stop?.label ?? 'punto aproximado')); }
     }
   }
 }
@@ -771,10 +772,33 @@ if (!REPLAY && state.plan?.date === today && !state.plan.cerrado && state.plan.d
   const plan = state.plan;
   const loc = state.chase?.on && state.chase.loc && NOW - state.chase.loc.t < 90 * 60e3 ? state.chase.loc : null;
   const donde = loc ?? plan.base;
+  let nc = null;
+  try { nc = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8')); } catch { /* sin satélite */ }
+  const fresco = nc?.hora_utc && NOW - Date.parse(nc.hora_utc) < 60 * 60e3;
+  const celdas = fresco ? nc.celulas : [];
+  // ¿El camino de vuelta a Leones está libre de tormentas?
+  const vuelta = () => {
+    const r = rutaLibre(donde, HOME, celdas, { now: NOW, imgUtc: nc?.hora_utc });
+    return r ? `⚠️ <b>Hay una tormenta en el camino a Leones</b> (la cruzarías en ~${r.en_min} min, ${esc(r.c.cerca_de ?? '')}): <b>esperá bajo techo</b> (estación de servicio) 30–45 min a que pase. No la atravieses.`
+      : '✅ El camino de vuelta a Leones está libre de tormentas.';
+  };
+  // Yendo a la base: ¿el camino pasa por alguna tormenta?
+  if (loc && plan.base && km(loc, plan.base) > 10 && nowMin / 60 < plan.decision && NOW - (plan.avisoRuta ?? 0) > 30 * 60e3) {
+    const r = rutaLibre(loc, plan.base, celdas, { now: NOW, imgUtc: nc?.hora_utc });
+    if (r) {
+      messages.push([
+        `👉 <b>QUÉ HACER: esperá donde estás (bajo techo) ~30 min</b>`,
+        '',
+        `⚠️ <b>En el camino a la base hay una tormenta</b>: ${esc(r.c.fuerza)} (${esc(r.c.cerca_de ?? '')}), la cruzarías en ~${r.en_min} min.`,
+        'No la atravieses: lluvia fuerte, granizo y rayos en la ruta. Parate en una estación de servicio o un lugar techado y esperá a que pase; te aviso cuando el camino esté libre.',
+      ].join('\n'));
+      plan.avisoRuta = NOW; plan.rutaBloqueada = true;
+    } else if (plan.rutaBloqueada) {
+      messages.push('✅ <b>El camino a la base ya está libre.</b> Podés seguir viaje.');
+      plan.rutaBloqueada = false;
+    }
+  }
   if (!plan.avisoDecision && nowMin / 60 >= plan.decision) {
-    let nc = null;
-    try { nc = JSON.parse(await readFile(`${dir}/nowcast.json`, 'utf8')); } catch { /* sin satélite */ }
-    const fresco = nc?.hora_utc && NOW - Date.parse(nc.hora_utc) < 60 * 60e3;
     const cerca = (fresco ? nc.celulas : []).map((c0) => { const e = coreAt(c0, nc.hora_utc, NOW); return { ...c0, lat: e.lat, lon: e.lon }; })
       .filter((c) => km(donde, c) <= 60 && c.tendencia !== 'debilitándose' && (c.fuerza !== 'moderada' || c.tendencia === 'creciendo' || c.tendencia === 'nueva' || c.rayos_10min >= 10));
     messages.push(cerca.length ? [
@@ -783,15 +807,16 @@ if (!REPLAY && state.plan?.date === today && !state.plan.cerrado && state.plan.d
       `Volvé a más tardar a las <b>${clock(plan.ocaso * 60)}</b> (se pone el sol).`,
     ].join('\n') : [
       `📋 <b>Paso 4 · hora de decidir (${clock(plan.decision * 60)})</b>`,
-      `No nació nada a menos de 60 km${loc ? ' tuyo' : ' de la base'}.`,
+      `No nació nada para ver a menos de 60 km${loc ? ' tuyo' : ' de la base'}.`,
       plan.planB ? `👉 Si tenés ganas, andá al <b>plan B: Zona ${esc(plan.planB.zona)}</b> (${plan.planB.v}), a ${plan.planB.km} km de la base${plan.planB.label ? `: 🌾 ${esc(plan.planB.label)}` : ''}. <a href="${ruta(plan.planB.vp)}">🗺️ Ruta</a>`
         : '👉 <b>Volvé tranquilo.</b> Hoy no se armó. Pasa seguido: los cazadores vuelven sin nada la mayoría de los días.',
+      ...(cerca.length && !plan.planB ? [] : [vuelta()]),
     ].join('\n'));
     if (!cerca.length && plan.planB) messages.push(pin2(plan.planB.vp, `Plan B · Zona ${plan.planB.zona}`, plan.planB.label ?? ''));
     plan.avisoDecision = true;
   }
   if (!plan.avisoOcaso && loc && nowMin / 60 >= plan.ocaso - 0.5) {
-    messages.push(`🌅 <b>Paso 5 · en 30 min se pone el sol</b> (${clock(plan.ocaso * 60)}). Emprendé la vuelta: de noche no se ve la tormenta y es peligroso. Mandá /fin cuando llegues.`);
+    messages.push(`🌅 <b>Paso 5 · en 30 min se pone el sol</b> (${clock(plan.ocaso * 60)}). Emprendé la vuelta: de noche no se ve la tormenta y es peligroso. Mandá /fin cuando llegues.\n${vuelta()}`);
     plan.avisoOcaso = true;
   }
 }
