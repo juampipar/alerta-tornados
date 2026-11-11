@@ -287,9 +287,11 @@ if (data) {
     const rank = (ranks[date] = bestTowns(date));
     if (!rank[0]) continue;
     const sc = dayScore(date, rank);
-    const prev = state.days[date] ?? -1;
+    // El aviso de MAÑANA y el de HOY (con el plan y los horarios actualizados) se mandan los dos.
+    const k = off === 0 ? date : `${date}:m`;
+    const prev = state.days[k] ?? -1;
     const fire = sc >= MIN && sc >= prev + 10 && !quiet;
-    if (fire) state.days[date] = sc;
+    if (fire) state.days[k] = sc;
     if (fire || (test && (off === 0 || sc >= MIN))) messages.push(await huntMessage(date, label, rank, fire ? prev : -1));
     // Plan de hoy (para avisar si después cambia): la zona y la parada que se mandaron.
     if (fire && off === 0) {
