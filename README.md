@@ -121,6 +121,8 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 - **👉 QUÉ HACER**: cada aviso de tormenta empieza con una sola línea con la acción (andá al punto, quedate, movete X km hacia tal lado, guardá el auto).
 - **Tormentas para mirar**: además de las fuertes, el 🎯 incluye tormentas **moderadas aisladas que crecen** (o con rayos en aumento) a menos de 100 km, marcadas como "para mirar, pocas chances de tornado". El satélite subestima algunas tormentas que en el radar se ven fuertes.
 
+- **🛡️ Camino seguro** (`rutaLibre` en `lib/tormenta.mjs`): el plan hace llegar a la base 1 h 30 antes de que empiecen las tormentas (viaje con cielo seco). Con el modo caza, si el camino a la base pasa por una tormenta, avisa "esperá bajo techo ~30 min" y después "el camino ya está libre". A la hora de decidir y al ponerse el sol revisa el camino de vuelta a Leones. El 🎯 descarta puntos cuyo camino pasa por otra tormenta. El umbral del aviso del día vuelve a 60.
+
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
@@ -141,7 +143,7 @@ Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
 **🤖 Recomendación con IA (opcional, gratis):** cuando llega un "Día de caza" o un 🚨, Gemini lee `data/brief.json` (un resumen de todo el panel pensado para IA) y manda un mensaje corto "Qué haría yo", con reglas de seguridad fijas. Para activarla: en https://aistudio.google.com tocá **Get API key → Create API key**, copiala y cargala como secreto `GEMINI_API_KEY` (Settings → Secrets and variables → Actions). La capa gratuita alcanza; el modelo se puede cambiar con la variable `GEMINI_MODEL` (por defecto `gemini-flash-latest`). Sin la clave todo funciona igual, sin ese mensaje.
 
-Opcional, en la pestaña **Variables** de esa misma pantalla: `MIN_SCORE` (umbral, 50 por defecto: de 50 a 59 llega como 🟠 día posible, desde 60 como 🌪️ día de caza) y `RADIUS_KM` (radio para avisos SMN, 200 por defecto). Para un grupo, agregá el bot al grupo y usá el id del grupo (empieza con `-`).
+Opcional, en la pestaña **Variables** de esa misma pantalla: `MIN_SCORE` (umbral, 60 por defecto; si lo bajás, entre ese valor y 59 llega como 🟠 día posible) y `RADIUS_KM` (radio para avisos SMN, 200 por defecto). Para un grupo, agregá el bot al grupo y usá el id del grupo (empieza con `-`).
 
 Local: `DRY_RUN=1 node scripts/alert.mjs .` muestra lo que mandaría sin enviarlo.
 
