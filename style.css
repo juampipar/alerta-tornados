@@ -402,3 +402,5 @@ footer p { margin: 4px 0; }
 /* 🎯 Punto para ver la mejor tormenta */
 .intermark span { font-size: 22px; filter: drop-shadow(0 0 4px rgba(0, 0, 0, .8)); }
 .leaflet-tooltip.intertip { white-space: normal; width: min(260px, 70vw); }
+
+.nacmark span { font-size: 18px; filter: drop-shadow(0 0 3px rgba(0,0,0,.7)); }
