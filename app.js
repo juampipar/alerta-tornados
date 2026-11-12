@@ -1,4 +1,4 @@
-import { HOME, POINTS, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, ruralStop, plainKey, bearingTo, coreAt } from './lib/risk.mjs';
+import { HOME, POINTS, buildDataset, level, scoreColor, verdict, km, driveHours, sunsetHour, rumbo, huntZones as findZones, zoneCells, goTo, viewpoint, routeCheck, safeLeave, placeName, movePoint, huntOptions, ruralStop, plainKey, bearingTo, coreAt } from './lib/risk.mjs';
 import { stormDiagram, radarShapes } from './lib/diagram.mjs';
 import { loadHistory } from './lib/historial-ui.mjs';
 import { initRed, setRedLayer } from './lib/red.mjs';
@@ -546,11 +546,7 @@ const vpSpan = (vp) => `<span class="vpname" data-ll="${vp.lat.toFixed(2)},${vp.
 // Zonas de caza con el máximo del día (de 11 a 2 h), sin importar el control de hora.
 function dayZones(date, max = 2) {
   const idx = windowIdx(date);
-  const cells = S.data.grid.pts.map(([lat, lon], k) => {
-    let v = 0, i = idx[0];
-    for (const j of idx) if ((S.data.grid.score[k][j] ?? 0) > v) { v = S.data.grid.score[k][j]; i = j; }
-    return { lat, lon, v, i };
-  });
+  const cells = zoneCells(S.data.grid, S.data.towns, idx); // grilla + pueblos: la zona n.º 1 es la de mayor puntaje
   // Ventana de horas con la zona del modelo; después, la corrección aprendida del historial (zona y hora).
   const hourOf = (j) => { const t = S.data.times[j]; return +t.slice(11, 13) + (t.startsWith(date) ? 0 : 24); };
   return findZones(cells, S.data.towns, max).map((z) => {

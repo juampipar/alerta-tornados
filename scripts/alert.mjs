@@ -13,7 +13,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
-import { HOME, level, km, driveHours, rumbo, huntZones, placeName, huntOptions, ruralStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
+import { HOME, level, km, driveHours, rumbo, huntZones, zoneCells, placeName, huntOptions, ruralStop, plainKey, sunsetHour, coreAt, movePoint } from '../lib/risk.mjs';
 import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from '../lib/modelos.mjs';
 import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion, peligroGranizo, comoAlejarse, paraMirar, rutaLibre } from '../lib/tormenta.mjs';
@@ -86,11 +86,7 @@ function hoursLeft(date) {
 function zonesFor(date, max = 2) {
   if (!data.grid) return [];
   const idx = hoursLeft(date);
-  const cells = data.grid.pts.map(([lat, lon], k) => {
-    let v = 0, i = idx[0];
-    for (const j of idx) if ((data.grid.score[k][j] ?? 0) > v) { v = data.grid.score[k][j]; i = j; }
-    return { lat, lon, v, i };
-  });
+  const cells = zoneCells(data.grid, data.towns, idx); // grilla + pueblos: la zona n.º 1 es la de mayor puntaje
   // Igual que el panel: ventana de horas y corrección aprendida. ctr_modelo queda para el historial,
   // que mide el error contra el modelo sin corregir (si no, la corrección se mediría contra sí misma).
   const hourOf = (j) => { const t = data.times[j]; return +t.slice(11, 13) + (t.startsWith(date) ? 0 : 24); };
