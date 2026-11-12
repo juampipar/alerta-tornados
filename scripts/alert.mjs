@@ -633,6 +633,25 @@ if (state.chase.on && state.chase.loc) {
   const news = cores.filter((c) => (c.tendencia === 'nueva' || c.tendencia === 'creciendo') && (strong(c) || c.d <= 60 || (c.d <= 100 && paraMirar(c, cores))) && !state.chase.seen[key(c)]);
   const danger = cores.find((c) => c.d <= 20 || (c.coming != null && c.coming <= 40 && c.d <= 50));
   const acp = (smn?.alerts ?? []).filter((a) => a.shortTerm && distTo(a, me) <= 60 && !state.chase.seen['acp:' + a.id]);
+  // 🌱 Puede estar naciendo una tormenta cerca: una nube que crece rápido en dos imágenes seguidas (no en la misma),
+  // a menos de 60 km y con tope ya bajo −30 °C. Probado el 10/11: 1 de cada 3–4 terminó en tormenta, así que es
+  // un "mirá hacia allá", no un "andá".
+  const nacAhora = (ncFresh ? nc.nacimientos ?? [] : []).filter((n) => km(me, n) <= 60 && n.tope_C <= -30);
+  const nacAntes = (state.chase.nacPrev ?? []).filter((p) => NOW - p.t < 60 * 60e3);
+  const persiste = nacAhora.filter((n) => nacAntes.some((p) => p.hora !== nc.hora_utc && km(p, n) < 30));
+  state.chase.nacPrev = [...nacAntes.filter((p) => p.hora !== nc?.hora_utc), ...nacAhora.map((n) => ({ lat: n.lat, lon: n.lon, t: NOW, hora: nc.hora_utc }))].slice(-30);
+  const nKey = (n) => 'nac:' + `${n.lat.toFixed(1)},${n.lon.toFixed(1)}`;
+  const nac = persiste.filter((n) => !state.chase.seen[nKey(n)]).sort((a, b) => km(me, a) - km(me, b))[0];
+  if (nac && NOW - (state.chase.lastNac ?? 0) > 20 * 60e3) {
+    const d = Math.round(km(me, nac)), dir = rumbo(bearing(me, nac));
+    chaseOut.push([
+      `👉 <b>QUÉ HACER: mirá hacia el ${dir}. Todavía no te muevas</b>`,
+      '',
+      `🌱 <b>Puede estar naciendo una tormenta</b> a ${d} km al ${dir} tuyo (${esc(nac.cerca_de)}): una nube que crece rápido (tope ${nac.tope_C} °C, se enfrió ${Math.round(nac.enfrio_C)} °C en 30 min).`,
+      'Fijate si ves una torre blanca que sube como coliflor. <i>De cada 3–4 nubes así, una termina en tormenta.</i> Si crece, te llega el 🎯 con adónde ir.',
+    ].join('\n'));
+    state.chase.seen[nKey(nac)] = NOW; state.chase.lastNac = NOW;
+  }
   // 🧊 Se te viene el granizo: tiene prioridad sobre todo (no espera el intervalo entre mensajes).
   const gr = peligroGranizo({ me, nc: ncFresh ? nc : null, now: NOW });
   const grKey = gr ? 'gr:' + `${gr.c.lat.toFixed(1)},${gr.c.lon.toFixed(1)}` : null;

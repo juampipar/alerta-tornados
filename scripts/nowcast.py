@@ -355,13 +355,59 @@ def make_zooms(cells, grid, t1, max_n=4):
     return out
 
 
+def nacimientos(g1, g0, cores, dt_h):
+    """Tormentas NACIENDO (antes de ser núcleos): nubes cuyo tope se enfrió rápido entre las dos imágenes, o sea
+    que están creciendo hacia arriba, y todavía no son tan frías como una tormenta formada (entre −15 y −45 °C).
+    Para no confundir una nube que llegó moviéndose con una que creció, se compara con lo más frío que había
+    ~25 km alrededor en la imagen anterior: tiene que estar más fría que eso."""
+    b1, lat, lon, px = g1
+    b0 = g0[0]
+    s1 = ndimage.gaussian_filter(b1, 1)
+    w = max(3, int(round(25 / px)) | 1)
+    antes = ndimage.minimum_filter(ndimage.gaussian_filter(b0, 1), size=w)
+    enfrio = antes - s1  # K; positivo = ahora más frío = creció
+    ok = np.isfinite(lat) & (lat >= BBOX['s']) & (lat <= BBOX['n']) & (lon >= BBOX['w']) & (lon <= BBOX['e'])
+    umbral = 8 * max(0.5, min(1.5, (dt_h or 0.5) / 0.5))  # ~8 °C en 30 min
+    # Ya era nube antes (no cielo despejado: si no, es un yunque que se desparrama encima) y se enfrió de a poco.
+    crece = ok & (s1 < 258) & (s1 > 228) & (enfrio >= umbral) & (enfrio <= 30) & (antes < 283)
+    lab, n = ndimage.label(crece)
+    out = []
+    for k in range(1, n + 1):
+        m = lab == k
+        area = float(m.sum()) * px * px
+        if m.sum() < 4 or area > 900:  # muy chica: ruido; muy grande: un manto de nubes, no una torre
+            continue
+        yy, xx = np.where(m)
+        j = np.argmin(s1[yy, xx])
+        y, x = yy[j], xx[j]
+        # Toda la nube se enfrió (no solo un borde) y su tope ya pasa los −20 °C: está subiendo de verdad.
+        if float(np.median(enfrio[m])) < 10 or s1[y, x] > 253 or area < 40:
+            continue
+        p = (float(lat[y, x]), float(lon[y, x]))
+        if any(km(p, (c['lat'], c['lon'])) < 60 for c in cores):  # parte (o yunque) de una tormenta ya formada
+            continue
+        town = min(TOWNS, key=lambda t: km(p, (t[1], t[2])))
+        dt = km(p, (town[1], town[2]))
+        if dt > 150:
+            continue
+        out.append({
+            'lat': round(p[0], 2), 'lon': round(p[1], 2),
+            'tope_C': round(float(s1[y, x]) - 273.15), 'enfrio_C': round(float(enfrio[m].max()), 1),
+            'area_km2': round(area),
+            'cerca_de': f'sobre {town[0]}' if dt < 8 else f"{round(dt)} km al {rumbo(bearing((town[1], town[2]), p))} de {town[0]}",
+            'km_de_leones': round(km((HOME[1], HOME[2]), p)),
+        })
+    out.sort(key=lambda c: -c['enfrio_C'])
+    return out[:15]
+
+
 def main():
     # NOWCAST_AT=2026-11-03T21:40 permite revisar un momento pasado (pruebas).
     at = os.environ.get('NOWCAST_AT')
     now = datetime.fromisoformat(at).replace(tzinfo=timezone.utc) if at else datetime.now(timezone.utc)
     (t1, k1), prev = pick_frames(now)
     c1, grid = cells_of(k1)
-    c0 = cells_of(prev[1])[0] if prev else []
+    c0, grid0 = cells_of(prev[1]) if prev else ([], None)
     dt_h = (t1 - prev[0]).total_seconds() / 3600 if prev else None
     steer = steering_fn(t1)
     t_valid = t1 + timedelta(minutes=5)  # la imagen se escanea en ~10 min: tomamos la mitad
@@ -406,6 +452,11 @@ def main():
         })
     cells.sort(key=lambda c: (c['tope_min_C'], -c['area_km2']))
     try:
+        nac = nacimientos(grid, grid0, c1, dt_h) if grid0 is not None else []
+    except Exception as e:  # sin esto el resto sigue igual
+        nac = []
+        print('nacimientos: falló:', e)
+    try:
         rayos = add_lightning(cells, t_valid, now)
         if rayos:
             saltos = sum(1 for c in cells if c.get('salto_rayos'))
@@ -428,6 +479,8 @@ def main():
                      'y pasa de 5 por minuto: suele anticipar granizo, viento fuerte o rotación en 10–30 min.',
         'rayos': rayos,
         'celulas': [{k: v for k, v in c.items() if not k.startswith('_')} for c in cells[:25]],
+        # 🌱 Tormentas naciendo: nubes que crecen rápido (tope enfriándose ≥ 8 °C en 30 min) y todavía no son núcleos.
+        'nacimientos': nac,
     }
     json.dump(res, open(os.path.join(OUT, 'nowcast.json'), 'w'), ensure_ascii=False)
     # Sumar los zooms a la lista de imágenes para la IA.
@@ -438,7 +491,9 @@ def main():
         json.dump(meta, open(mp, 'w'), ensure_ascii=False)
     except Exception as e:
         print('nowcast: no pude anotar los zooms:', e)
-    print(f"nowcast: {len(cells)} núcleos ({res['hora_anterior']} → {res['hora']})")
+    print(f"nowcast: {len(cells)} núcleos, {len(nac)} naciendo ({res['hora_anterior']} → {res['hora']})")
+    for c in nac[:4]:
+        print(f"  🌱 naciendo {c['tope_C']}°C (se enfrió {c['enfrio_C']}°C) {c['area_km2']} km² · {c['cerca_de']} · {c['km_de_leones']} km de Leones")
     for c in cells[:6]:
         print(f"  {c['fuerza']:10} {c['tope_min_C']:4}°C {c['area_km2']:6} km² OT={c['topes_sobresalientes']} {c['tendencia']:13} {c['va_hacia'] or '-':9} {c['kmh'] or '-':>4} km/h · {c['cerca_de']} · {c['km_de_leones']} km de Leones")
 

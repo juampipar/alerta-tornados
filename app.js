@@ -852,6 +852,11 @@ async function loadNowcast() {
 function renderNowcast() {
   ncLayer.clearLayers();
   if (!S.layers.nucleos || !nowcast) return;
+  // 🌱 Nubes que están creciendo rápido (pueden ser tormentas en 30–60 min; 1 de cada 3–4 lo termina siendo).
+  for (const n of nowcast.nacimientos ?? []) {
+    L.marker([n.lat, n.lon], { pane: 'smn', icon: L.divIcon({ className: 'nacmark', html: '<span>🌱</span>', iconSize: null }) })
+      .bindTooltip(`<b>🌱 Puede estar naciendo una tormenta</b><br>Nube que crece rápido: tope ${n.tope_C} °C, se enfrió ${Math.round(n.enfrio_C)} °C en 30 min · ${esc(n.cerca_de)}<br><i>De cada 3–4 así, una termina en tormenta.</i>`, { sticky: true }).addTo(ncLayer);
+  }
   for (const c of nowcast.celulas ?? []) {
     const col = c.fuerza === 'muy fuerte' ? '#c040e8' : c.fuerza === 'fuerte' ? '#ff3b5c' : '#ffd43b';
     const r = c.fuerza === 'muy fuerte' ? 11 : c.fuerza === 'fuerte' ? 9 : 6;
