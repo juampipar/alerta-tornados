@@ -769,7 +769,7 @@ function renderSmn() {
   // Pueblos del panel dentro de las zonas (o el más cercano) y distancia desde tu punto de salida.
   for (const g of groups.values()) {
     const pts = g.polys.flat();
-    g.dist = g.mine ? 0 : pts.length ? Math.round(Math.min(...pts.map(([lat, lon]) => km(o, { lat, lon })))) : null;
+    g.dist = g.mine ? 0 : g.polys.length ? Math.round(Math.min(...g.polys.map((p) => distToPoly(o, p)))) : null; // al BORDE de la zona
     const inside = POINTS.filter((t) => g.polys.some((p) => inPoly([t.lat, t.lon], p))).map((t) => t.name);
     if (inside.length) g.donde = inside;
     else if (pts.length) {
@@ -793,14 +793,23 @@ function renderSmn() {
     Rojo: 'Fenómenos excepcionales: peligro muy alto.', Naranja: 'Fenómenos peligrosos probables: tomar precauciones.',
     Amarillo: 'Pueden darse fenómenos fuertes: estar atento.', Verde: 'Sin fenómenos peligrosos.',
   };
-  const lejos = (g) => g.dist == null ? '' : g.mine ? '<span class="you">📍 incluye tu ubicación</span>' : `<span class="dist">a ${g.dist} km de vos</span>`;
+  const ZONA = '<i>El aviso es para toda la zona dibujada (departamentos): no es el camino de una tormenta ni quiere decir que pase justo por cada pueblo.</i>';
+  const lejos = (g) => g.dist == null ? '' : g.mine ? '<span class="you">📍 ESTÁS DENTRO</span>' : `<span class="dist">estás afuera · el borde está a ${g.dist} km</span>`;
+  // Tu situación, en una línea: ¿estás dentro de algún aviso?
+  const quien = o.fallback || !o.label ? 'Leones' : o.label;
+  const dentro = gs.filter((g) => g.mine);
+  const cerca = gs.filter((g) => !g.mine && g.dist != null).sort((x, y) => x.dist - y.dist)[0];
+  const tuyo = dentro.length
+    ? `<p class="smnyo dentro">📍 <b>${esc(quien)} está DENTRO de ${dentro.length === 1 ? 'un aviso' : `${dentro.length} avisos`}:</b> ${dentro.map((g) => `${esc(g.lbl)} · ${esc(g.event)}${cuandoCorto(g)}`).join(' — ')}</p>`
+    : `<p class="smnyo">✅ <b>${esc(quien)} no está dentro de ningún aviso.</b>${cerca ? ` El más cercano: ${esc(cerca.lbl)} · ${esc(cerca.event)}, con el borde a ${cerca.dist} km.` : ''}</p>`;
+  function cuandoCorto(g) { return g.expires ? ` (hasta ${fmt(new Date(g.expires).toISOString(), { weekday: 'short', hour: '2-digit', minute: '2-digit' })})` : ''; }
   const cuando = (g) => {
     const f = (ms) => fmt(new Date(ms).toISOString(), { weekday: 'short', hour: '2-digit', minute: '2-digit' });
     return g.desde && g.expires ? `${g.desde > Date.now() ? `desde ${f(g.desde)} ` : 'ahora · '}hasta ${f(g.expires)}` : g.expires ? `hasta ${f(g.expires)}` : '';
   };
   const dondeTxt = (g) => esc(g.donde.slice(0, 5).join(', ')) + (g.donde.length > 5 ? ` y ${g.donde.length - 5} más` : '');
   el.className = 'card smn' + (short ? ' hot' : '');
-  el.innerHTML = `<div class="smnhead"><h2>${short ? '🚨' : '⚠️'} Avisos oficiales SMN</h2><span class="muted">${gs.length} ${gs.length === 1 ? 'aviso' : 'avisos'} · ${upd}</span></div>` +
+  el.innerHTML = `<div class="smnhead"><h2>${short ? '🚨' : '⚠️'} Avisos oficiales SMN</h2><span class="muted">${gs.length} ${gs.length === 1 ? 'aviso' : 'avisos'} · ${upd}</span></div>` + tuyo +
     gs.map((g, k) => `
       <details class="al ${g.mine ? 'mine' : ''} ${g.dist > 300 ? 'far' : ''}" style="--c:${g.c}" ${g.rank < 0 || g.mine ? 'open' : ''}>
         <summary>
@@ -808,7 +817,7 @@ function renderSmn() {
           <small>📍 ${dondeTxt(g)}${g.zonas > 1 ? ` · ${g.zonas} zonas` : ''}</small>
           ${cuando(g) ? `<small>🕒 ${cuando(g)}</small>` : ''}
         </summary>
-        <p class="mean">${MEANS[g.lbl] ?? ''}</p>
+        <p class="mean">${MEANS[g.lbl] ?? ''} ${ZONA}</p>
         ${g.desc ? `<p>${esc(g.desc)}</p>` : ''}${g.instruction ? `<p class="instr">${esc(g.instruction)}</p>` : ''}
         ${g.bounds ? `<button class="chip almap" data-k="${k}">Ver en el mapa</button>` : ''}
       </details>`).join('');
