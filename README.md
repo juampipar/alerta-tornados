@@ -127,6 +127,8 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 
 - **🌱 Tormentas naciendo** (`nacimientos` en `scripts/nowcast.py`): nubes cuyo tope se enfrió 8–30 °C en 30 min (crecen hacia arriba), que ya eran nubes en la imagen anterior (no es un yunque desparramándose), de menos de 900 km², con tope ya bajo −20 °C y lejos (>60 km) de tormentas formadas. Probado con la tarde del 10/11: el 21% se volvió núcleo en 30–60 min contra el 12% de un punto al azar en las mismas condiciones; exigiendo que siga creciendo en dos imágenes y tope ≤ −30 °C, 1 de cada 3–4. Por eso en Telegram solo llega en modo caza, a menos de 60 km, y como "mirá hacia allá, todavía no te muevas". En el panel se ven como 🌱.
 
+- **🌪️ Chances de tornado de cada tormenta** (`potencialTornado` en `lib/tormenta.mjs`): ambiente del pronóstico donde está la tormenta (índice del pueblo y la celda más cercanos, esta hora y la próxima; giro cerca del suelo, base de nube) más sus señales en el satélite (aislada o punta norte, topes que sobresalen, salto de rayos, muy fuerte) → alta / media / baja. **Solo se manda a ver (🎯, aviso del satélite, novedades del modo caza) tormentas con chances media o alta**; las demás solo avisan si son un peligro (granizo, escape, tormenta hacia Leones).
+
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
