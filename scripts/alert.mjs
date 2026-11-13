@@ -962,6 +962,40 @@ if (!REPLAY) {
   }
 }
 
+/* ---------- 📢 Aviso del SMN en TU ubicación (cualquier tipo: tormentas, granizo, viento…) ---------- */
+// Tu ubicación del modo caza si está fresca; si no, Leones. Una vez por aviso. Amarillo solo de 7 a 23 h.
+if (!REPLAY) {
+  const loc = state.chase?.on && state.chase.loc && NOW - state.chase.loc.t < 90 * 60e3 ? state.chase.loc : null;
+  const yo = loc ? { lat: loc.lat, lon: loc.lon, name: 'tu ubicación' } : HOME;
+  state.smnMio ??= {};
+  for (const [id, exp] of Object.entries(state.smnMio)) if (Date.parse(exp) < Date.now() - 864e5) delete state.smnMio[id];
+  const nivelDe = (a) => {
+    if (a.shortTerm) return { t: 'AVISO A CORTO PLAZO', e: '🚨', r: 0 };
+    const p = `${Object.values(a.params || {}).join(' ')} ${a.headline}`.toLowerCase();
+    if (/rojo|red/.test(p) || a.severity === 'Extreme') return { t: 'ROJO', e: '🟥', r: 1 };
+    if (/naranja|orange/.test(p) || a.severity === 'Severe') return { t: 'NARANJA', e: '🟧', r: 2 };
+    if (/amarill|yellow/.test(p) || a.severity === 'Moderate') return { t: 'AMARILLO', e: '🟨', r: 3 };
+    return null; // verde u otros: nada que avisar
+  };
+  for (const a of (smn?.alerts ?? []).filter((a) => covers(a, yo) && !state.smnMio[a.id])) {
+    const n = nivelDe(a);
+    if (!n || (n.r === 3 && quiet)) continue;
+    const ev = a.event || a.headline || 'Fenómenos';
+    const hacer = n.r === 0 ? 'guardá el auto y quedate bajo techo: tormenta severa en tu zona en la próxima hora'
+      : n.r <= 2 ? 'guardá el auto bajo techo y estate atento' : 'estate atento; si ves que se pone feo, guardá el auto';
+    messages.push([
+      `👉 <b>QUÉ HACER: ${hacer}</b>`,
+      '',
+      `${n.e} <b>AVISO DEL SMN EN ${loc ? 'TU UBICACIÓN' : esc(yo.name.toUpperCase())}: ${n.t} · ${esc(cap(ev.toLowerCase()))}</b>`,
+      a.onset || a.expires ? `🕒 ${a.onset && Date.parse(a.onset) > Date.now() ? `desde las ${hhmm(a.onset)} ` : 'ahora '}${a.expires ? `hasta las ${hhmm(a.expires)}` : ''}` : null,
+      a.description ? esc(a.description.slice(0, 280)) + (a.description.length > 280 ? '…' : '') : null,
+      '<i>Es un aviso para toda la zona (departamento): no quiere decir que la tormenta pase justo por tu casa.</i>',
+      `<a href="https://www.smn.gob.ar/alertas">Ver en el SMN</a> · <a href="${PANEL}">🗺️ Panel</a>`,
+    ].filter(Boolean).join('\n'));
+    state.smnMio[a.id] = a.expires || new Date(NOW + 6 * 3600e3).toISOString();
+  }
+}
+
 /* ---------- Envío ---------- */
 console.log(messages.length ? messages.map((m) => (m?.venue ? `[pin ${m.venue.lat},${m.venue.lon}] ${m.venue.title}` : typeof m === 'object' ? `[foto ${m.photo}] ${m.caption}` : m)).join('\n\n———\n\n') : `Nada para avisar (umbral ${MIN}, ${clock(nowMin)} h).`);
 const { TELEGRAM_BOT_TOKEN: token, TELEGRAM_CHAT_ID: chat } = env;

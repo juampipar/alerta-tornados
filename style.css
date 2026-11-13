@@ -404,3 +404,6 @@ footer p { margin: 4px 0; }
 .leaflet-tooltip.intertip { white-space: normal; width: min(260px, 70vw); }
 
 .nacmark span { font-size: 18px; filter: drop-shadow(0 0 3px rgba(0,0,0,.7)); }
+
+.smnyo { margin: 0; padding: 8px 10px; border-radius: 10px; background: rgba(61,220,151,.08); border: 1px solid rgba(61,220,151,.35); }
+.smnyo.dentro { background: rgba(255,140,26,.10); border-color: rgba(255,140,26,.6); }

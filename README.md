@@ -131,6 +131,8 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 
 - **"Salí ya" solo si es limpio y vale la pena**: el 🎯 en vivo exige chances de tornado **altas** (o medias con ambiente de 60 o más), el **camino** lejos de la nube de cualquier otra tormenta (margen de 10 km más el radio de su nube fría, mientras manejás) y el **punto** limpio al llegar. Si no se cumple, el aviso dice "no vayas". Lo normal es ir **antes** a la base con cielo limpio (el plan del día).
 
+- **📢 Aviso del SMN en tu ubicación**: cuando un aviso del SMN (amarillo, naranja, rojo o a corto plazo; tormentas, granizo, viento, lo que sea) cubre tu ubicación (la del modo caza, o Leones), llega por Telegram con el nivel, el tipo, hasta qué hora y qué hacer; una vez por aviso; los amarillos solo de 7 a 23 h. En el panel, arriba de los avisos: "📍 ESTÁS DENTRO de…" o "✅ no estás dentro de ningún aviso; el más cercano, con el borde a X km" (distancia al borde real de la zona). Los avisos son por zona (departamentos), no el camino de una tormenta.
+
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
