@@ -129,6 +129,8 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 
 - **🌪️ Chances de tornado de cada tormenta** (`potencialTornado` en `lib/tormenta.mjs`): ambiente del pronóstico donde está la tormenta (índice del pueblo y la celda más cercanos, esta hora y la próxima; giro cerca del suelo, base de nube) más sus señales en el satélite (aislada o punta norte, topes que sobresalen, salto de rayos, muy fuerte) → alta / media / baja. **Solo se manda a ver (🎯, aviso del satélite, novedades del modo caza) tormentas con chances media o alta**; las demás solo avisan si son un peligro (granizo, escape, tormenta hacia Leones).
 
+- **"Salí ya" solo si es limpio y vale la pena**: el 🎯 en vivo exige chances de tornado **altas** (o medias con ambiente de 60 o más), el **camino** lejos de la nube de cualquier otra tormenta (margen de 10 km más el radio de su nube fría, mientras manejás) y el **punto** limpio al llegar. Si no se cumple, el aviso dice "no vayas". Lo normal es ir **antes** a la base con cielo limpio (el plan del día).
+
 ## Alertas por Telegram
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
