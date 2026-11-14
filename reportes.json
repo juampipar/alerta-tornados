@@ -1,0 +1,30 @@
+[
+ {
+  "id": 1,
+  "tipo": "tornado",
+  "lugar": "El Trébol (Santa Fe)",
+  "lat": -32.2,
+  "lon": -61.7,
+  "fecha": "2026-11-13",
+  "hora": "19:00",
+  "aprox_hora": false,
+  "aprox_lugar": false,
+  "fuente": "Instagram",
+  "nota": "Video en Instagram; confirmado por el usuario.",
+  "t": 1794668400000
+ },
+ {
+  "id": 2,
+  "tipo": "tornado",
+  "lugar": "Sur del departamento Juan Martín de Pueyrredón (San Luis)",
+  "lat": -34.1,
+  "lon": -65.4,
+  "fecha": "2026-11-13",
+  "hora": "16:00",
+  "aprox_hora": true,
+  "aprox_lugar": true,
+  "fuente": "usuario",
+  "nota": "\"A la tarde\", en una localidad al sur del departamento.",
+  "t": 1794670200000
+ }
+]
