@@ -64,6 +64,20 @@ La sección **📒 Historial** muestra cuántos avistajes de rotación, embudo o
 - El panel dice cuánto corrigió ("Corregido con N días: las tormentas aparecieron X km al este y Y h más tarde") o cuántos días faltan para empezar.
 - La corrección está en `historial.json` (`sesgo`). La usan el panel y las alertas de Telegram (que la leen del historial publicado). El resumen `brief.json` guarda además `hora_pico_modelo` y `centro_modelo`: el historial mide el error contra el modelo sin corregir, para que la corrección no se mida contra sí misma.
 
+## 📋 Tus reportes (/reporte por Telegram)
+Cuando sabés que pasó algo de verdad (lo viste, salió en Instagram, en las noticias), mandalo al bot como lo dirías:
+`/reporte tornado en El Trébol ayer 19 h, lo vi en Instagram` · `/reporte granizo en Leones hoy a la tarde` ·
+`/reporte embudo -32.20, -61.70 13/11 18:30`. Entiende "ayer", "13/11", "19 h", "7 de la tarde", "a la tarde"
+(aproximado) y "el sur del departamento X" (busca X y se corre 25 km a ese lado).
+- **Te contesta el cruce**: si el satélite vio una tormenta fuerte cerca (de 3 h antes a 1 h después, a menos de 80 km;
+  los topes que sobresalen cuentan más), a qué punto te mandó la app ese día y a cuántos km, y a cuántos km quedó la zona
+  pronosticada. Para eso el vigía anota cada punto que te manda (parada, plan B, punto para ver la tormenta).
+- **Se guarda** en la rama `datos` (`reportes.json`, lo sube el vigía) y el historial lo pone en su día (📋 en el panel).
+- **La app aprende**: en la corrección de zona y hora (`lib/sesgo.mjs`) un tornado, embudo o rotación reportado pesa doble,
+  igual que un video fuerte de la red.
+- `/reportes` muestra la lista con el cruce (🛰️ satélite · 🎯 punto de la app · 📈 zona). `/borrar 3` borra el 3.
+- Ya están cargados los dos tornados del 13/11/2026 (El Trébol 19 h; sur del depto. Juan Martín de Pueyrredón, a la tarde).
+
 ## Varios modelos (GFS, ICON, ECMWF)
 `lib/modelos.mjs`. Cada 6 h (`modelos.json`, reusado entre corridas para cuidar la cuota de Open-Meteo) se calcula el mismo índice con **GFS, ICON y ECMWF por separado**, en los pueblos más una grilla de 1,5°. Para cada zona de caza se ve el máximo de cada modelo cerca de la zona y a qué hora: si los tres llegan a 45 o más, la zona es confiable; si solo uno la ve, es dudosa. La ventana de horas se ensancha para incluir los picos de los modelos que coinciden. Lo muestran el panel ("🧮 Modelos: GFS 72 (17:00) · ICON 65 (18:00) · ECMWF 70 (19:00) → 3 de 3"), Telegram y el resumen para la IA. Un modelo sin datos útiles se descarta solo.
 
