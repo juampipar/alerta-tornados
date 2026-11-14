@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '11 */3 * * *' # respaldo: si la cadena se corta, la retoma
-permissions: { contents: read, actions: write }
+permissions: { contents: write, actions: write } # contents: write solo para subir tus /reporte a la rama datos
 concurrency: { group: vigia, cancel-in-progress: false }
 jobs:
   vigia:
@@ -26,6 +26,22 @@ jobs:
       - name: Revisar cada 10 minutos
         run: |
           PANEL=https://juampipar.github.io/alerta-tornados/data
+          # Sube _v/data/reportes.json a la rama datos. Si el panel se adelantó (también escribe ahí), vuelve a
+          # partir de la punta nueva y reintenta (solo toca reportes.json, así que no hay conflictos).
+          subir_reportes() (
+            for i in 1 2 3 4; do
+              git worktree remove -f .datos-rep 2>/dev/null; git worktree prune
+              git fetch -q --depth=1 origin datos || exit 1
+              git worktree add -q -f -B datos-rep .datos-rep FETCH_HEAD || exit 1
+              cp _v/data/reportes.json .datos-rep/reportes.json
+              git -C .datos-rep add reportes.json
+              git -C .datos-rep diff --cached --quiet && exit 0
+              git -C .datos-rep -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -qm "Reportes $(date -u +%FT%H:%MZ)"
+              git -C .datos-rep push -q origin HEAD:datos && exit 0
+              sleep 10
+            done
+            exit 1
+          )
           fin=$(( $(date +%s) + 325 * 60 ))
           n=0
           mkdir -p _v/data/wrf
@@ -39,6 +55,10 @@ jobs:
             python scripts/nowcast.py _v || echo 'satélite: falló'
             python scripts/build-images.py _v > /dev/null 2>&1 || echo 'imágenes para la IA: fallaron'
             node scripts/alert.mjs _v || echo 'alerta: falló'
+            # Tus /reporte de Telegram: si cambiaron, a la rama datos (el historial del panel los lee de ahí).
+            if [ -f _v/data/reportes.json ] && ! cmp -s _v/data/reportes.json _v/reportes.subido; then
+              subir_reportes && cp _v/data/reportes.json _v/reportes.subido || echo 'reportes: no se pudieron subir'
+            fi
             # Cada 30 min, el panel con datos frescos (su cron de GitHub no es confiable).
             if [ $((n % 3)) -eq 0 ]; then gh workflow run pages.yml --ref main -f auto=true || echo 'no pude lanzar el panel'; fi
             echo "::endgroup::"

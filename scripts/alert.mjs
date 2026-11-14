@@ -17,6 +17,7 @@ import { HOME, level, km, driveHours, rumbo, huntZones, zoneCells, placeName, hu
 import { shiftZone, zoneWindow, correctedWindow } from '../lib/sesgo.mjs';
 import { zoneAgreement, widenWindow } from '../lib/modelos.mjs';
 import { amenazas, valeAvisar, revisar, aciertos, NIVEL, mejorIntercepcion, peligroGranizo, comoAlejarse, paraMirar, rutaLibre, potencialTornado } from '../lib/tormenta.mjs';
+import { parseReporte, verificar, lineasVerif, textoReporte, todos as todosReportes, enviadosDe, direccionDe, AYUDA_REPORTE } from '../lib/reportes.mjs';
 
 const dir = (process.argv[2] || '_site') + '/data';
 const env = process.env;
@@ -53,9 +54,11 @@ const smn = await readJson(`${dir}/smn.json`);
 const MOD = await readJson(`${dir}/modelos.json`); // índice con GFS, ICON y ECMWF por separado
 const state = (await readJson(STATE)) || {};
 // Corrección aprendida (zona y hora) del historial publicado. Sin ella, se usa el modelo tal cual.
-const BIAS = await (async () => {
-  try { const r = await fetch(env.PUBLISHED_HIST || PANEL + 'data/historial.json', { cache: 'no-store' }); return r.ok ? (await r.json()).sesgo ?? null : null; } catch { return null; }
+// El historial completo también sirve para cruzar tus /reporte con el satélite de ese día.
+const HIST = await (async () => {
+  try { const r = await fetch(env.PUBLISHED_HIST || PANEL + 'data/historial.json', { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch { return null; }
 })();
+const BIAS = HIST?.sesgo ?? null;
 state.smn ??= {}; state.days ??= {};
 // v2: los puntajes guardados antes eran de la zona mal calculada (sobre el río o Uruguay): se olvidan.
 if (state.v !== 2) { state.days = {}; state.v = 2; }
@@ -588,6 +591,11 @@ async function readTelegram() {
       if (/^\/?guia\b|^\/?guía\b/.test(txt)) state.chase.pideGuia = true;
       if (/^\/?(fin|stop|basta)\b/.test(txt)) { state.chase.on = false; chaseOut.push('🏁 <b>Modo caza apagado.</b> Buen regreso.'); }
       if (/^\/?estado\b/.test(txt)) state.chase.force = true;
+      // 📋 Reportes de lo que pasó de verdad (ver lib/reportes.mjs).
+      if (/^\/?reporte(@\w+)?(\s|$)/.test(txt)) (state.reportesPend ??= []).push({ txt: m.text, t: m.date * 1000 });
+      if (/^\/?reportes\b/.test(txt)) state.pideReportes = true;
+      const bo = txt.match(/^\/?borrar\s+#?(\d+)/);
+      if (bo) (state.borrarRep ??= []).push(+bo[1]);
     }
   } catch (e) { console.error('Telegram (lectura) falló:', e.message); }
 }
@@ -996,6 +1004,65 @@ if (!REPLAY) {
   }
 }
 
+/* ---------- 📋 Reportes (/reporte, /reportes, /borrar N) ---------- */
+// Lo que pasó de verdad: se cruza con el satélite de ese día y con los puntos que te mandó la app, y se guarda
+// (el vigía lo sube a la rama "datos"; el historial lo usa para aprender dónde y cuándo aparecen las tormentas).
+async function geocode(lugar) {
+  const { base, deg } = direccionDe(lugar);
+  const q = new URLSearchParams({ q: base, format: 'jsonv2', limit: '1', countrycodes: 'ar', 'accept-language': 'es', viewbox: '-70,-27,-55,-40', bounded: '1' });
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?${q}`, { headers: { 'User-Agent': 'alerta-tornados (panel personal de tormentas, GitHub juampipar/alerta-tornados)' } });
+    const x = r.ok ? (await r.json())[0] : null;
+    if (!x) return null;
+    let p = { lat: +x.lat, lon: +x.lon };
+    const amplio = ['administrative', 'state', 'county'].includes(x.type) || /departamento|partido|provincia/i.test(base);
+    if (deg != null) p = movePoint(p, deg, 25);
+    return { ...p, aprox: deg != null || amplio };
+  } catch (e) { console.error('Reporte: no pude buscar el lugar:', e.message); return null; }
+}
+if (!REPLAY && !env.DRY_RUN) {
+  state.reportes ??= [];
+  for (const n of state.borrarRep ?? []) {
+    const r = todosReportes(state).find((x) => x.id === n);
+    if (r) { (state.reportesBorrados ??= []).push(n); messages.push(`🗑️ Borré el reporte ${n}: ${textoReporte(r)}`); }
+    else messages.push(`No encontré el reporte ${n}. /reportes para ver la lista.`);
+  }
+  state.borrarRep = [];
+  for (const p of state.reportesPend ?? []) {
+    const q = parseReporte(p.txt, p.t);
+    if (q.error) { messages.push(AYUDA_REPORTE); continue; }
+    const g = q.coords ? { ...q.coords, aprox: false } : await geocode(q.lugar);
+    if (!g) { messages.push(`📋 No encontré "<b>${esc(q.lugar)}</b>" en el mapa. Probá con el nombre del pueblo más cercano o pegá las coordenadas.\n\n${AYUDA_REPORTE}`); continue; }
+    const id = Math.max(0, ...todosReportes(state).map((x) => x.id), ...(state.reportesBorrados ?? [])) + 1;
+    const r = { id, tipo: q.tipo, lugar: q.lugar, lat: +g.lat.toFixed(3), lon: +g.lon.toFixed(3), fecha: q.fecha, hora: q.hora, aprox_hora: q.aprox_hora, aprox_lugar: g.aprox, fuente: q.fuente, nota: q.nota, t: p.t };
+    state.reportes.push(r);
+    const v = verificar(r, { dia: HIST?.dias?.[r.fecha], enviados: enviadosDe(state) });
+    messages.push([
+      `📋 <b>Reporte ${id} guardado</b>: ${textoReporte(r)}`,
+      r.hora ? null : '<i>Sin hora: lo cruzo con toda la tarde y la noche. Si sabés la hora, borralo (/borrar ' + id + ') y mandalo de nuevo con la hora.</i>',
+      '',
+      ...lineasVerif(r, v),
+      '',
+      `<i>Con esto la app aprende: un tornado reportado pesa doble al corregir dónde y cuándo aparecen las tormentas fuertes.</i>`,
+      `/reportes: ver todos · /borrar ${id} si me equivoqué`,
+    ].filter((x) => x != null).join('\n'));
+    messages.push(pin2(r, `Reporte ${id}: ${r.tipo}`, `${r.lugar ?? ''} ${r.fecha.slice(8)}/${r.fecha.slice(5, 7)} ${r.hora ?? ''}`.trim()));
+  }
+  state.reportesPend = [];
+  if (state.pideReportes) {
+    state.pideReportes = false;
+    const rs = todosReportes(state).slice(-15);
+    messages.push(rs.length ? ['📋 <b>Tus reportes</b>', ...rs.map((r) => {
+      const v = verificar(r, { dia: HIST?.dias?.[r.fecha], enviados: enviadosDe(state) });
+      const sat = v.sat ? (v.sat.topes_sobresalientes ? '🛰️✅' : '🛰️🟡') : v.sin_datos ? '🛰️–' : '🛰️❌';
+      const app = v.app ? (v.app.km <= 30 ? `🎯✅ ${v.app.km} km` : `🎯 ${v.app.km} km`) : '🎯 no avisó';
+      return `${r.id}. ${textoReporte(r)}\n    ${sat} · ${app}${v.zona ? ` · 📈 zona a ${v.zona.km} km` : ''}`;
+    }), '', '🛰️ = satélite vio una tormenta fuerte cerca · 🎯 = punto al que te mandó la app · 📈 = zona pronosticada', AYUDA_REPORTE.split('\n').slice(-1)[0]].join('\n') : AYUDA_REPORTE);
+  }
+  // Para el vigía: lo sube a la rama "datos" (reportes.json) si cambió.
+  await writeFile(`${dir}/reportes.json`, JSON.stringify(todosReportes(state), null, 1));
+}
+
 /* ---------- Envío ---------- */
 console.log(messages.length ? messages.map((m) => (m?.venue ? `[pin ${m.venue.lat},${m.venue.lon}] ${m.venue.title}` : typeof m === 'object' ? `[foto ${m.photo}] ${m.caption}` : m)).join('\n\n———\n\n') : `Nada para avisar (umbral ${MIN}, ${clock(nowMin)} h).`);
 const { TELEGRAM_BOT_TOKEN: token, TELEGRAM_CHAT_ID: chat } = env;
@@ -1017,6 +1084,9 @@ for (const m of messages) {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ chat_id: chat, latitude: m.venue.lat, longitude: m.venue.lon, title: m.venue.title, address: m.venue.address || ' ' }),
     });
+    // Se anota adónde te mandó la app (para cruzarlo después con tus /reporte).
+    if (r.ok && /^(Punto para ver|Parada|Plan B)/.test(m.venue.title)) (state.enviados ??= []).push({ t: NOW, lat: m.venue.lat, lon: m.venue.lon, titulo: m.venue.title, lugar: m.venue.address || null });
+    if (state.enviados?.length > 400) state.enviados = state.enviados.slice(-400);
   } else if (typeof m === 'object' && m.photo) {
     try {
       const fd = new FormData();

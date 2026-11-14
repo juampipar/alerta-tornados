@@ -33,6 +33,7 @@ hist = updateHistory(hist, {
   smn: await readJson(`${d}/smn.json`),
   nowcast: await readJson(`${d}/nowcast.json`),
   publicaciones: await publicaciones(),
+  reportes: await readJson(`${store}/reportes.json`), // tus /reporte de Telegram (los sube el vigía)
 });
 hist.sesgo = computeBias(hist, artDate(Date.now()));
 console.log(`corrección aprendida: ${hist.sesgo.aplicado ? `${hist.sesgo.este_km} km al este, ${hist.sesgo.norte_km} km al norte, ${hist.sesgo.horas} h` : 'todavía no'} (${hist.sesgo.dias_usados} días)`);
