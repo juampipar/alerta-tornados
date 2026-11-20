@@ -65,6 +65,9 @@ if (state.v !== 2) { state.days = {}; state.v = 2; }
 // Antes el aviso de MAÑANA se guardaba con la fecha sola: pasarlo a "fecha:m" para que llegue también el de HOY.
 for (const d of Object.keys(state.days)) if (!d.includes(':') && d > new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10)) { state.days[`${d}:m`] = state.days[d]; delete state.days[d]; }
 const messages = [];
+// La IA (🤖 Qué haría yo) solo acompaña los mensajes que piden decidir algo: el aviso del día, un 🎯 para salir
+// o el modo caza. Antes iba con cada aviso del SMN y llenaba Telegram.
+let pedirIA = false;
 // REPLAY_AT=2026-11-03T21:40 (UTC): repite ese momento en modo caza desde Leones, para probar (no toca el estado).
 const REPLAY = env.REPLAY_AT ? Date.parse(env.REPLAY_AT.endsWith('Z') ? env.REPLAY_AT : env.REPLAY_AT + 'Z') : null;
 const NOW = REPLAY ? REPLAY + 15 * 60e3 : Date.now(); // en vivo el satélite llega con ~15 min de atraso: se simula igual
@@ -293,7 +296,7 @@ if (data) {
     const prev = state.days[k] ?? -1;
     const fire = sc >= MIN && sc >= prev + 10 && !quiet;
     if (fire) state.days[k] = sc;
-    if (fire || (test && (off === 0 || sc >= MIN))) messages.push(await huntMessage(date, label, rank, fire ? prev : -1));
+    if (fire || (test && (off === 0 || sc >= MIN))) { messages.push(await huntMessage(date, label, rank, fire ? prev : -1)); pedirIA = true; }
     // Plan de hoy (para avisar si después cambia): la zona y la parada que se mandaron.
     if (fire && off === 0) {
       const o = (await optionsFor(date))[0];
@@ -326,13 +329,15 @@ for (const a of smn?.alerts ?? []) {
   const home = covers(a, HOME), dHome = Math.round(distTo(a, HOME));
   // Cerca de una zona de caza: dentro del círculo o a menos de NEAR_ZONE km de su borde.
   const zone = zones.map((z) => ({ z, d: covers(a, z.ctr) ? 0 : Math.max(0, distTo(a, z.ctr) - z.r) })).filter((x) => x.d <= NEAR_ZONE).sort((x, y) => x.d - y.d)[0]?.z;
-  if (!home && !zone && dHome > RADIUS) continue;
+  if (!home && !zone && dHome > 120) continue;
   state.smn[a.id] = a.expires || new Date().toISOString();
   const areas = [...new Set(a.areas.map((x) => title(x.desc).replace(/\.$/, '')).filter(Boolean))];
   live.push(`• <b>${esc(cap((a.event || a.headline || 'Tormentas').toLowerCase()))}</b>: ${esc(areas.slice(0, 4).join(', '))}${areas.length > 4 ? ` +${areas.length - 4}` : ''}` +
     `\n   ${home ? '📍 <b>incluye Leones</b>' : `a ${dHome} km de Leones`}${zone ? ` · en la zona ${esc(zone.name)}` : ''}${a.expires ? ` · hasta las ${hhmm(a.expires)}` : ''}`);
 }
-if (live.length) {
+// Una sola vez por día: los avisos siguientes del SMN se ven en el panel (antes llegaba uno por cada aviso nuevo).
+if (live.length && state.vivoDia !== today) {
+  state.vivoDia = today;
   messages.push([
     `🚨 <b>¡YA SE ESTÁN FORMANDO!</b>`,
     `Hoy es día de caza (potencial ${todayScore}) y el SMN puso ${live.length === 1 ? 'un aviso' : `${live.length} avisos`} a corto plazo:`,
@@ -341,6 +346,7 @@ if (live.length) {
     ...(live.length > 6 ? [`…y ${live.length - 6} más`] : []),
     '',
     `<a href="${PANEL}">📡 Mirá el radar antes de moverte</a>`,
+    '<i>Este aviso llega una vez por día. Si nace una tormenta a la que conviene ir, te llega el 🎯 aparte.</i>',
   ].join('\n'));
 }
 
@@ -761,14 +767,18 @@ if (!REPLAY && data && state.plan?.date === today && !state.plan.cerrado && !qui
   const mejor = best && plan.ctr && (!mine || km(best.z.ctr, plan.ctr) > 90) && best.z.v >= curV + 10;
   // Ya en camino (desde 1 h antes de la ventana): no se cambia el plan por el pronóstico; manda el satélite.
   const enCamino = plan.inicio != null && nowMin / 60 >= plan.inicio - 1;
-  if (enCamino && (bajo || mejor) && !plan.avisoEnCamino && !(mejor && best.z.v >= curV + 15)) {
+  state.cambiosPlan = state.cambiosPlan?.d === today ? state.cambiosPlan : { d: today, n: 0 };
+  if (enCamino && (bajo || mejor) && !plan.avisoEnCamino && !(mejor && best.z.v >= curV + 15) && !state.chase?.on) {
+    plan.avisoEnCamino = true; // no saliste (sin modo caza): nada que decir
+  } else if (enCamino && (bajo || mejor) && !plan.avisoEnCamino && !(mejor && best.z.v >= curV + 15)) {
     messages.push([
       `📋 <b>El pronóstico ${bajo ? `bajó (de ${plan.v} a ${curV || 'menos de 45'})` : 'cambió'}, pero seguí el plan</b>`,
       `Ya estás en camino o en la base: desde ahora lo que manda es <b>el satélite</b>, no el pronóstico. Muchas tormentas nacen igual.`,
       `Esperá en la base hasta las <b>${clock(plan.decision * 60)}</b>. Si nace algo, te mando el 🎯. Si a esa hora no nació nada cerca, ${plan.planB ? `andá al plan B (Zona ${esc(plan.planB.zona)})` : 'volvé tranquilo'}.`,
     ].join('\n'));
     plan.avisoEnCamino = true; state.planMsg = NOW;
-  } else if ((!enCamino || (mejor && best.z.v >= curV + 15)) && (plan.semilla || bajo || mejor)) {
+  } else if ((!enCamino || (mejor && best.z.v >= curV + 15)) && (plan.semilla || bajo || mejor) && state.cambiosPlan.n < 2) {
+    state.cambiosPlan.n++;
     let o = best;
     if (o) { // parada rural para la opción nueva (si falta)
       state.stopsR ??= {};
@@ -834,12 +844,15 @@ if (!REPLAY && state.plan?.date === today && !state.plan.cerrado && state.plan.d
       plan.rutaBloqueada = false;
     }
   }
+  // Sin modo caza estás en casa: no hace falta decirte "seguí" ni "volvé".
+  if (!plan.avisoDecision && nowMin / 60 >= plan.decision && !state.chase?.on) plan.avisoDecision = true;
   if (!plan.avisoDecision && nowMin / 60 >= plan.decision) {
+    const smnCerca = (smn?.alerts ?? []).filter((a) => a.shortTerm && distTo(a, donde) <= 60);
     const cerca = (fresco ? nc.celulas : []).map((c0) => { const e = coreAt(c0, nc.hora_utc, NOW); return { ...c0, lat: e.lat, lon: e.lon }; })
       .filter((c) => km(donde, c) <= 60 && c.tendencia !== 'debilitándose' && (c.fuerza !== 'moderada' || c.tendencia === 'creciendo' || c.tendencia === 'nueva' || c.rayos_10min >= 10));
-    messages.push(cerca.length ? [
+    messages.push(cerca.length || smnCerca.length ? [
       `📋 <b>Paso 4 · hora de decidir (${clock(plan.decision * 60)})</b>`,
-      `Hay ${cerca.length === 1 ? 'una tormenta' : `${cerca.length} tormentas`} a menos de 60 km${loc ? ' tuyo' : ' de la base'}: <b>seguí</b>. Si alguna se pone buena, te llega el 🎯 con adónde ir.`,
+      `${cerca.length ? `Hay ${cerca.length === 1 ? 'una tormenta' : `${cerca.length} tormentas`}` : 'El SMN tiene un aviso a corto plazo'} a menos de 60 km${loc ? ' tuyo' : ' de la base'}: <b>seguí</b>. Si alguna se pone buena, te llega el 🎯 con adónde ir.`,
       `Volvé a más tardar a las <b>${clock(plan.ocaso * 60)}</b> (se pone el sol).`,
     ].join('\n') : [
       `📋 <b>Paso 4 · hora de decidir (${clock(plan.decision * 60)})</b>`,
@@ -885,6 +898,8 @@ if (!state.chase.on && satHunt && (REPLAY || !quiet)) {
       : c.rayos_10min ? ` · ${c.rayos_10min} rayos en 10 min` : '');
     const line = (c) => `• <b>${esc(c.fuerza)}</b> (${c.tope_min_C} °C${c.topes_sobresalientes ? `, ⚡ ${c.topes_sobresalientes} topes que sobresalen` : ''}) · <b>${esc(c.tendencia)}</b>${c.tornado ? ` · 🌪️ chances de tornado <b>${c.tornado.nivel}</b>` : ''}${rayos(c)}\n   ${esc(c.cerca_de)} · a ${c.d} km al ${c.from} de Leones${c.va_hacia ? ` · va al ${c.va_hacia}${c.kmh ? ` a ~${c.kmh} km/h` : ''}` : ''}`;
     const hay = await intercept(HOME, nc);
+    if (!hay) satEvent = null; // nada que hacer: no se manda (las ves en el panel)
+    else {
     messages.push([
       `👉 <b>QUÉ HACER: ${hay ? (INTER.quedate ? 'quedate en Leones: la vas a ver pasar de costado' : `si querés verla, salí al punto 🎯${INTER.stop ? ` (${esc(INTER.stop.label)})` : ''}: llegás en ~${INTER.llegas_min} min`) : 'quedate: no hay ninguna para ver de costado'}</b>`,
       '',
@@ -899,6 +914,7 @@ if (!state.chase.on && satHunt && (REPLAY || !quiet)) {
     if (INTER) messages.push(pin2(INTER.p, 'Punto para ver la tormenta', INTER.stop?.label ?? ''));
     const z = img ? null : cores.find((c) => c.imagen);
     if (z) messages.push({ photo: `${dir}/${z.imagen}`, caption: `🛰️ Zoom satélite: ${esc(z.cerca_de)} · tope ${z.tope_min_C} °C${z.topes_sobresalientes ? ` · ⚡ ${z.topes_sobresalientes} topes que sobresalen` : ''}.` });
+    }
   }
 }
 
@@ -913,7 +929,9 @@ if (data) {
   }
   if (!REPLAY) await writeFile(`${dir}/brief.json`, JSON.stringify(brief, null, 1));
 }
-if (brief && messages.length && !env.DRY_RUN && !(chaseOut.length && !chaseEvent && messages.length === chaseOut.length)) {
+state.iaDia = state.iaDia?.d === today ? state.iaDia : { d: today, n: 0 };
+if (brief && messages.length && !env.DRY_RUN && (pedirIA || chaseEvent || (satEvent && INTER)) && state.iaDia.n < 5) {
+  state.iaDia.n++;
   const focus = satEvent && !chaseEvent ? `AVISO DEL SATÉLITE: nació o crece una tormenta fuerte en el Pasillo (ver nucleos_satelite). El usuario está en Leones. Si existe "intercepcion", recomendá ESE punto; si no existe, decí que NO conviene salir (se aleja o no se llega de costado) y que el sistema avisa si aparece una a la que llegue.`
     : chaseEvent ? `MODO CAZA: el usuario está en la ruta (ver "vos"). Decile exactamente qué hacer ahora con las tormentas detectadas por satélite (${chaseEvent.tipo === 'cerca' ? 'hay una tormenta cerca: priorizá su seguridad' : 'hay tormentas nuevas o creciendo'}): si existe "escape", decí hacia dónde moverse; si existe "intercepcion", recomendá ESE punto; si no existe ninguno de los dos, decí que se quede y NO persiga (se aleja o no se llega de costado).`
     : live.length ? 'hay avisos del SMN de tormentas formándose: qué hacer en las próximas 2 horas'
@@ -922,6 +940,7 @@ if (brief && messages.length && !env.DRY_RUN && !(chaseOut.length && !chaseEvent
   if (adv) messages.push(`🤖 <b>Qué haría yo</b> <i>(IA, con los datos de arriba)</i>\n${esc(adv).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^\s*[*-]\s+/gm, '• ')}\n<i>Es una sugerencia: manda el radar y tu criterio.</i>`);
 }
 
+let avisoTormenta = false; // si sale el ⛈️, el aviso del SMN en Leones va dentro de ese mensaje
 /* ---------- ⛈️ Tormenta fuerte o granizo hacia Leones (todos los días, no solo días de caza) ---------- */
 // Avisa con qué seguridad llega y qué tan probable es el granizo, y lleva la cuenta de cuántas veces acertó.
 // Con el modo caza prendido no se manda (ese ya avisa con tu ubicación en vivo).
@@ -931,19 +950,23 @@ if (!REPLAY) {
   const me = HOME;
   state.stormLog = revisar(state.stormLog ?? [], { me, nc, smn, now: NOW }).slice(-60);
   const xs = amenazas({ me, nc, smn, data, now: NOW });
-  const x = xs.find((t) => valeAvisar(t, { noche: quiet }));
+  // Solo lluvia (granizo poco probable) y sin seguridad alta: no vale un mensaje.
+  const x = xs.find((t) => valeAvisar(t, { noche: quiet }) && (t.granizo.nivel !== 'poco probable' || t.llega === 'alta'));
   const R = { alta: 3, media: 2, baja: 1 }, G = { probable: 3, posible: 2, 'poco probable': 1 };
   const st = state.storm ?? {};
   if (x && !state.chase.on) {
+    // Se avisa una vez. De nuevo solo si sube (más seguro o más granizo), y no antes de 20 min;
+    // o si es una tormenta nueva (la anterior ya había pasado) más de 2 h después del último aviso.
     const sube = R[x.llega] > (st.llega ?? 0) || G[x.granizo.nivel] > (st.gran ?? 0);
-    if (!st.activa || sube || NOW - (st.last ?? 0) > 45 * 60e3) {
+    st.visto = NOW; state.storm = st;
+    if ((sube && NOW - (st.last ?? 0) > 20 * 60e3) || (!st.activa && NOW - (st.last ?? 0) > 2 * 3600e3)) {
       const n = NIVEL[x.llega], c = x.core;
       const hora = new Date(NOW + (x.eta ?? 0) * 60e3).toISOString();
       const cuando = x.eta == null ? ' · en las próximas horas' : x.eta > 0 ? ` · en ~${x.eta} min (≈ ${hhmm(hora)} h)` : ' · <b>ya está encima</b>';
       const ac = aciertos(state.stormLog);
       const acTxt = ['alta', 'media', 'baja'].filter((k) => ac[k]).map((k) => `${NIVEL[k].emoji} ${ac[k].llegaron} de ${ac[k].total}`).join(' · ');
       messages.push([
-        `👉 <b>QUÉ HACER: ${x.granizo.nivel === 'poco probable' ? 'nada urgente; si querés, guardá el auto' : '<u>guardá el auto bajo techo</u>'}${x.eta ? ` (llega en ~${x.eta} min)` : ''}</b>`,
+        `👉 <b>QUÉ HACER: ${x.granizo.nivel === 'poco probable' ? 'viene lluvia fuerte y rayos (granizo poco probable): si podés, guardá el auto' : '<u>guardá el auto bajo techo</u>'}${x.eta ? ` (llega en ~${x.eta} min)` : ''}</b>`,
         '',
         `⛈️ <b>Tormenta fuerte hacia ${esc(me.name)}</b>`,
         `${n.emoji} <b>${n.txt}</b>${cuando}`,
@@ -960,13 +983,15 @@ if (!REPLAY) {
         const img = await mapa({ titulo: `Tormenta hacia ${me.name}: ${n.txt.toLowerCase()}`, pie: `Satélite ${nc?.hora ?? ''} h`, yo: { ...me, label: me.name.toUpperCase() }, tormentas: [coreSpec(c)] });
         if (img) messages.push({ photo: img, caption: '🗺️ Círculo = tormenta y su camino (+30/+60 min) · violeta = donde suele caer el granizo.' });
       }
-      state.storm = { activa: true, last: NOW, llega: R[x.llega], gran: G[x.granizo.nivel] };
+      state.storm = { activa: true, last: NOW, visto: NOW, llega: Math.max(R[x.llega], st.activa ? st.llega ?? 0 : 0), gran: Math.max(G[x.granizo.nivel], st.activa ? st.gran ?? 0 : 0) };
+      avisoTormenta = true;
       state.stormLog.push({ t: NOW, eta: x.eta, llega: x.llega, granizo: x.granizo.nivel, me: { lat: me.lat, lon: me.lon } });
     }
-  } else if (st.activa && !xs.length && NOW - (st.last ?? 0) > 20 * 60e3) {
-    // La que avisamos ya pasó, se desvió o se deshizo: decirlo una vez (si fue hace poco).
-    if (NOW - st.last < 3 * 3600e3 && !state.chase.on) messages.push(`✅ <b>Ya no veo tormentas fuertes yendo hacia ${esc(me.name)}</b> (pasó, se desvió o se debilitó).`);
-    state.storm = { activa: false };
+  } else if (st.activa && !xs.length && NOW - (st.visto ?? st.last ?? 0) > 45 * 60e3) {
+    // La que avisamos ya pasó, se desvió o se deshizo (45 min sin verla, para no ir y volver): decirlo una vez,
+    // solo si el aviso era probable o muy probable.
+    if (NOW - st.last < 3 * 3600e3 && !state.chase.on && (st.llega ?? 0) >= 2) messages.push(`✅ <b>Ya no veo tormentas fuertes yendo hacia ${esc(me.name)}</b> (pasó, se desvió o se debilitó).`);
+    state.storm = { ...st, activa: false };
   }
 }
 
@@ -985,9 +1010,13 @@ if (!REPLAY) {
     if (/amarill|yellow/.test(p) || a.severity === 'Moderate') return { t: 'AMARILLO', e: '🟨', r: 3 };
     return null; // verde u otros: nada que avisar
   };
+  state.smnMioDia = state.smnMioDia?.d === today ? state.smnMioDia : { d: today, r: 99 };
   for (const a of (smn?.alerts ?? []).filter((a) => covers(a, yo) && !state.smnMio[a.id])) {
     const n = nivelDe(a);
     if (!n || (n.r === 3 && quiet)) continue;
+    // Ya avisado hoy un nivel igual o peor, o va dentro del ⛈️ de esta vuelta: se anota sin mandar.
+    if (n.r >= state.smnMioDia.r || (avisoTormenta && n.r === 0)) { state.smnMio[a.id] = a.expires || new Date(NOW + 6 * 3600e3).toISOString(); if (avisoTormenta) state.smnMioDia.r = Math.min(state.smnMioDia.r, n.r); continue; }
+    state.smnMioDia.r = n.r;
     const ev = a.event || a.headline || 'Fenómenos';
     const hacer = n.r === 0 ? 'guardá el auto y quedate bajo techo: tormenta severa en tu zona en la próxima hora'
       : n.r <= 2 ? 'guardá el auto bajo techo y estate atento' : 'estate atento; si ves que se pone feo, guardá el auto';

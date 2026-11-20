@@ -148,6 +148,20 @@ GitHub corre los cron "cada 10 min" cuando puede: con mucha carga, cada 1 a 6 ho
 - **📢 Aviso del SMN en tu ubicación**: cuando un aviso del SMN (amarillo, naranja, rojo o a corto plazo; tormentas, granizo, viento, lo que sea) cubre tu ubicación (la del modo caza, o Leones), llega por Telegram con el nivel, el tipo, hasta qué hora y qué hacer; una vez por aviso; los amarillos solo de 7 a 23 h. En el panel, arriba de los avisos: "📍 ESTÁS DENTRO de…" o "✅ no estás dentro de ningún aviso; el más cercano, con el borde a X km" (distancia al borde real de la zona). Los avisos son por zona (departamentos), no el camino de una tormenta.
 
 ## Alertas por Telegram
+
+**Menos ruido (20/11/2026).** El 19/11 llegaron ~55 mensajes en 5 horas, y algunos se contradecían ("volvé" y después
+"ya se están formando"). Ahora:
+- 🚨 *¡Ya se están formando!* (avisos del SMN en un día de caza): **una vez por día**, y solo si el aviso está a menos de
+  120 km de Leones o cerca de la zona de caza. Los siguientes se ven en el panel.
+- 🤖 *Qué haría yo* (IA): solo con el aviso del día, con un 🎯 para salir o en modo caza; máximo 5 por día.
+- 🛰️/🌪️ tormenta en el Pasillo: solo si hay un 🎯 al que ir con camino limpio. Si no hay nada que hacer, no se manda.
+- ⛈️ tormenta hacia Leones: se avisa **una vez**. De nuevo solo si sube (más segura o con más granizo). "Ya pasó" recién
+  después de 45 min sin verla, y solo si el aviso era probable o muy probable. Si es solo lluvia (granizo poco probable y
+  sin seguridad alta), no se manda.
+- 📢 aviso del SMN en tu ubicación: uno por día y por nivel (varios avisos iguales = uno). Si en esa vuelta salió el ⛈️,
+  va adentro de ese mensaje.
+- 📋 plan: "seguí el plan", "hora de decidir" y "volvé" solo si saliste (modo caza prendido con /caza o tu ubicación).
+  Si estás en casa, no te dice que vuelvas. Cambios de plan antes de salir: máximo 2 por día.
 Cada 10 minutos el vigía revisa los datos y manda estos mensajes:
 
 - 🌪️ **Día de caza**: hoy o mañana alguna zona llega a **60** o más (de **50 a 59** llega igual, como 🟠 **día posible**: potencial moderado). Trae la mejor zona, la hora pico, a qué hora salir desde Leones, hacia dónde van las tormentas, los ingredientes explicados (energía, cizalladura, giro cerca del suelo, base de nube), otras zonas y la ruta en Google Maps. Uno por día, y otro si sube 10 puntos. Entre las 23 y las 7 h no se manda.
